@@ -63,25 +63,71 @@ def build_score_matrix(
     prob_draw = float(np.trace(mat))
     prob_away = float(np.triu(mat, k=1).sum())
 
-    # 大小球（>2.5球）与双方均进球（BTTS）
+    # 大小球（>2.5球）、双方均进球（BTTS）、体彩让球(-1/+1)、双选防冷、总进球数分布
     over_25 = 0.0
     btts = 0.0
+    rq_m1_h = rq_m1_d = rq_m1_a = 0.0  # 主让1球（-1）：主赢>=2球=让胜，主赢1球=让平，平或客胜=让负
+    rq_p1_h = rq_p1_d = rq_p1_a = 0.0  # 主受让1球（+1）：主胜或平=受让胜，客赢1球=受让平，客赢>=2球=受让负
+    total_goals_dist: Dict[str, float] = {str(k): 0.0 for k in range(7)}
+    total_goals_dist["7+"] = 0.0
     scores_flat: List[Tuple[str, float]] = []
+
     for i in range(max_goals + 1):
         for j in range(max_goals + 1):
             p = float(mat[i, j])
             scores_flat.append((f"{i}-{j}", p))
-            if i + j >= 3:
+            tg = i + j
+            if tg >= 3:
                 over_25 += p
             if i >= 1 and j >= 1:
                 btts += p
+            # 总进球
+            if tg >= 7:
+                total_goals_dist["7+"] += p
+            else:
+                total_goals_dist[str(tg)] += p
+            # 主让 -1
+            diff = i - j
+            if diff >= 2:
+                rq_m1_h += p
+            elif diff == 1:
+                rq_m1_d += p
+            else:
+                rq_m1_a += p
+            # 主受让 +1
+            if diff >= 0:
+                rq_p1_h += p
+            elif diff == -1:
+                rq_p1_d += p
+            else:
+                rq_p1_a += p
 
     scores_flat.sort(key=lambda x: x[1], reverse=True)
     top_scores = [{"score": sc, "prob": round(pr, 4)} for sc, pr in scores_flat[:5]]
 
-    # 确定主推胜平负方向
+    # 确定主推胜平负方向与体彩双选推荐
     probs_map = {"H": prob_home, "D": prob_draw, "A": prob_away}
     recommended = max(probs_map, key=probs_map.get)
+
+    double_chance = {
+        "1X": round(prob_home + prob_draw, 4),  # 主不败（胜/平）
+        "X2": round(prob_draw + prob_away, 4),  # 客不败（平/负）
+        "12": round(prob_home + prob_away, 4),  # 分胜负（胜/负）
+    }
+    # 找出最稳的2个相邻总进球区间（体彩常见玩法如 2-3球）
+    tg_rounded = {k: round(v, 4) for k, v in total_goals_dist.items()}
+    best_tg_pair = max(
+        [
+            ("0-1球", tg_rounded["0"] + tg_rounded["1"]),
+            ("2-3球", tg_rounded["2"] + tg_rounded["3"]),
+            ("3-4球", tg_rounded["3"] + tg_rounded["4"]),
+            ("4+球", tg_rounded["4"] + tg_rounded["5"] + tg_rounded["6"] + tg_rounded["7+"]),
+        ],
+        key=lambda x: x[1],
+    )
+
+    # 5x5 热力图矩阵（主队 0..4 × 客队 0..4）
+    heatmap_5x5 = [[round(float(mat[i, j]), 4) for j in range(5)] for i in range(5)]
 
     return {
         "lam_home": round(lam_h, 3),
@@ -94,6 +140,22 @@ def build_score_matrix(
         "top5_scores": top_scores,
         "over_25_prob": round(over_25, 4),
         "btts_prob": round(btts, 4),
+        "lottery_markets": {
+            "handicap_minus1": {
+                "win": round(rq_m1_h, 4),
+                "draw": round(rq_m1_d, 4),
+                "lose": round(rq_m1_a, 4),
+            },
+            "handicap_plus1": {
+                "win": round(rq_p1_h, 4),
+                "draw": round(rq_p1_d, 4),
+                "lose": round(rq_p1_a, 4),
+            },
+            "double_chance": double_chance,
+            "total_goals": tg_rounded,
+            "best_total_goals_range": {"range": best_tg_pair[0], "prob": round(best_tg_pair[1], 4)},
+            "heatmap_5x5": heatmap_5x5,
+        },
     }
 
 

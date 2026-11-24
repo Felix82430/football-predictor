@@ -238,17 +238,55 @@ def fetch_event_summary(league_code: str, espn_event_id: str, timeout: float = 1
             text = ev.get("text") or ev_type
             red_cards.append(f"{clock} {text}".strip())
 
-    # 提取官方首发（赛前1小时左右放出）
+    # 提取官方首发（赛前1小时左右放出）及阵容中的伤病/停赛状态
     rosters_out: Dict[str, List[str]] = {}
+    injury_notes: List[str] = []
     for roster in data.get("rosters") or []:
         team_name = normalize_team_name((roster.get("team") or {}).get("displayName") or "")
+        team_cn = to_cn_name(team_name)
         starters = []
         for p in roster.get("roster") or []:
-            if p.get("starter"):
-                ath = p.get("athlete") or {}
-                starters.append(ath.get("displayName") or "")
+            ath = p.get("athlete") or {}
+            pname = ath.get("displayName") or ""
+            if p.get("starter") and pname:
+                starters.append(pname)
+            # 某些比赛节点附带伤停状态
+            inj_status = p.get("injuryStatus") or (ath.get("injuries") or [{}])[0].get("status") if isinstance(ath.get("injuries"), list) and ath.get("injuries") else ""
+            if inj_status and pname:
+                injury_notes.append(f"{team_cn}·{pname}({inj_status})")
         if starters:
             rosters_out[team_name] = starters
+
+    # 提取顶层 injuries 数组（若 ESPN 提供）
+    for team_inj in data.get("injuries") or []:
+        tname = to_cn_name(normalize_team_name((team_inj.get("team") or {}).get("displayName") or ""))
+        for item in (team_inj.get("injuries") or [])[:6]:
+            ath_name = (item.get("athlete") or {}).get("displayName") or ""
+            status_txt = item.get("status") or item.get("shortComment") or "伤停"
+            if ath_name:
+                injury_notes.append(f"{tname}·{ath_name}({status_txt})")
+
+    # 提取免费赛前新闻快讯头条（自动筛选含伤病/停赛/轮换/赛前关键词的标题）
+    news_headlines: List[Dict[str, str]] = []
+    for art in ((data.get("news") or {}).get("articles") or [])[:5]:
+        hl = (art.get("headline") or "").strip()
+        desc = (art.get("description") or "").strip()
+        link = ((art.get("links") or {}).get("web") or {}).get("href") or ""
+        if hl:
+            news_headlines.append({"headline": hl, "description": desc[:140], "url": link})
+
+    # 提取近期 5 场真实战绩摘要（ESPN lastFiveGames，跨联赛欧冠同样完整！）
+    last_five: Dict[str, str] = {}
+    for entry in data.get("lastFiveGames") or []:
+        tname = normalize_team_name((entry.get("team") or {}).get("displayName") or "")
+        evs = entry.get("events") or []
+        seq = []
+        for e in evs[:5]:
+            res_code = (e.get("gameResult") or "").upper()
+            if res_code in ("W", "D", "L"):
+                seq.append({"W": "胜", "D": "平", "L": "负"}[res_code])
+        if tname and seq:
+            last_five[tname] = "".join(seq)
 
     # 提取赛后统计（控球/射门/射正）
     box_stats: Dict[str, Dict[str, str]] = {}
@@ -263,5 +301,8 @@ def fetch_event_summary(league_code: str, espn_event_id: str, timeout: float = 1
         "referee": referee,
         "red_cards": red_cards,
         "starters": rosters_out,
+        "injuries": injury_notes[:12],
+        "news_headlines": news_headlines[:3],
+        "last_five": last_five,
         "box_stats": box_stats,
     }

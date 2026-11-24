@@ -178,6 +178,33 @@ def init_db() -> None:
             );
             """
         )
+        # 安全热迁移 v1.5 新增列（兼容已有旧数据库零报错）
+        _ensure_columns(
+            conn,
+            "predictions",
+            {
+                "lottery_json": "TEXT NOT NULL DEFAULT '{}'",
+                "value_ev_json": "TEXT NOT NULL DEFAULT '{}'",
+                "news_injuries_json": "TEXT NOT NULL DEFAULT '{}'",
+                "confidence_score": "REAL NOT NULL DEFAULT 50.0",
+                "confidence_tier": "TEXT NOT NULL DEFAULT ''",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "post_match_reviews",
+            {
+                "confidence_score": "REAL DEFAULT 50.0",
+                "clv_diff": "REAL",
+            },
+        )
+
+
+def _ensure_columns(conn: sqlite3.Connection, table: str, cols: Dict[str, str]) -> None:
+    existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for col_name, col_def in cols.items():
+        if col_name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
 
 
 def has_auto_pushed(push_key: str) -> bool:
@@ -260,10 +287,10 @@ def insert_odds_snapshot(
         return None
     if home_odds <= 1.0 or draw_odds <= 1.0 or away_odds <= 1.0:
         return None
-    inv_sum = (1.0 / home_odds) + (1.0 / draw_odds) + (1.0 / away_odds)
-    h_imp = round((1.0 / home_odds) / inv_sum, 4)
-    d_imp = round((1.0 / draw_odds) / inv_sum, 4)
-    a_imp = round((1.0 / away_odds) / inv_sum, 4)
+    # v1.5 升级：使用更精准的 Power 幂次去水法修正机构冷门抽水偏差
+    from engine.market_math import power_devig
+
+    h_imp, d_imp, a_imp = power_devig(home_odds, draw_odds, away_odds)
 
     with get_conn() as conn:
         # 避免短时间内重复存入完全相同的赔率快照
@@ -321,6 +348,11 @@ def get_odds_history(match_id: str) -> List[Dict[str, Any]]:
 
 
 def save_prediction(pred: Dict[str, Any]) -> int:
+    pred.setdefault("lottery_json", "{}")
+    pred.setdefault("value_ev_json", "{}")
+    pred.setdefault("news_injuries_json", "{}")
+    pred.setdefault("confidence_score", 50.0)
+    pred.setdefault("confidence_tier", "")
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -333,7 +365,8 @@ def save_prediction(pred: Dict[str, Any]) -> int:
                 recommended_outcome, top3_scores_json, over_25_prob, btts_prob,
                 market_prob_home, market_prob_draw, market_prob_away,
                 traffic_light, traffic_note, odds_trend_note,
-                summary_text, media_article, pushed_feishu
+                summary_text, media_article, pushed_feishu,
+                lottery_json, value_ev_json, news_injuries_json, confidence_score, confidence_tier
             ) VALUES (
                 :match_id, :stage, :is_locked, :model_version, :created_at,
                 :base_home_xg, :base_away_xg, :base_prob_home, :base_prob_draw, :base_prob_away,
@@ -343,7 +376,8 @@ def save_prediction(pred: Dict[str, Any]) -> int:
                 :recommended_outcome, :top3_scores_json, :over_25_prob, :btts_prob,
                 :market_prob_home, :market_prob_draw, :market_prob_away,
                 :traffic_light, :traffic_note, :odds_trend_note,
-                :summary_text, :media_article, :pushed_feishu
+                :summary_text, :media_article, :pushed_feishu,
+                :lottery_json, :value_ev_json, :news_injuries_json, :confidence_score, :confidence_tier
             )
             """,
             pred,
@@ -434,6 +468,8 @@ def get_match_detail(match_id: str) -> Optional[Dict[str, Any]]:
 
 
 def save_review(review: Dict[str, Any]) -> None:
+    review.setdefault("confidence_score", 50.0)
+    review.setdefault("clv_diff", None)
     with get_conn() as conn:
         conn.execute(
             """
@@ -443,14 +479,16 @@ def save_review(review: Dict[str, Any]) -> None:
                 outcome_hit, top3_score_hit, exact_top1_hit, brier_score,
                 upset_alert_useful, attribution_type,
                 actual_xg_home, actual_xg_away, red_cards_note,
-                root_cause_analysis, tuning_suggestion
+                root_cause_analysis, tuning_suggestion,
+                confidence_score, clv_diff
             ) VALUES (
                 :match_id, :prediction_id, :reviewed_at,
                 :actual_home_score, :actual_away_score, :actual_outcome,
                 :outcome_hit, :top3_score_hit, :exact_top1_hit, :brier_score,
                 :upset_alert_useful, :attribution_type,
                 :actual_xg_home, :actual_xg_away, :red_cards_note,
-                :root_cause_analysis, :tuning_suggestion
+                :root_cause_analysis, :tuning_suggestion,
+                :confidence_score, :clv_diff
             )
             ON CONFLICT(match_id) DO UPDATE SET
                 reviewed_at = excluded.reviewed_at,
@@ -467,7 +505,9 @@ def save_review(review: Dict[str, Any]) -> None:
                 actual_xg_away = COALESCE(excluded.actual_xg_away, post_match_reviews.actual_xg_away),
                 red_cards_note = COALESCE(excluded.red_cards_note, post_match_reviews.red_cards_note),
                 root_cause_analysis = excluded.root_cause_analysis,
-                tuning_suggestion = excluded.tuning_suggestion
+                tuning_suggestion = excluded.tuning_suggestion,
+                confidence_score = excluded.confidence_score,
+                clv_diff = excluded.clv_diff
             """,
             review,
         )

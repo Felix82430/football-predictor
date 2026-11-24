@@ -508,6 +508,16 @@
           </div>
 
           <div class="box">
+            <h4>🎫 体彩五大玩法精算 & EV 期望值（基于 8×8 精确矩阵）</h4>
+            ${renderLotteryPanel(p, m)}
+          </div>
+
+          <div class="box">
+            <h4>📰 0成本赛前情报速览（近5场战绩 / 伤停 / 头条）</h4>
+            ${renderNewsInjuriesPanel(p, m)}
+          </div>
+
+          <div class="box">
             <h4>🧾 透明情报「加减分明细账」（严格封顶防拍脑袋）</h4>
             <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
               • 多线体能：${(p.fatigue && p.fatigue.summary) || '无'}<br/>
@@ -542,6 +552,85 @@
 
       renderIntelList();
       document.getElementById('detailModal').classList.add('open');
+    }
+
+    function renderLotteryPanel(p, m) {
+      const lot = p.lottery || {};
+      const ev = p.value_ev || {};
+      if (!lot.double_chance) {
+        return `<div style="font-size:12px;color:var(--muted);">点击右上角「🧠 立即测算」即可生成体彩让球(-1/+1)、双选、总进球分布、5×5热力图与 EV 价值测算。</div>`;
+      }
+      const dc = lot.double_chance;
+      const rm1 = lot.handicap_minus1 || {};
+      const rp1 = lot.handicap_plus1 || {};
+      const tg = lot.total_goals || {};
+      const hm = lot.heatmap_5x5 || [];
+
+      const evRows = (ev.items || []).map(x => `
+        <span class="score-chip" style="${x.is_value ? 'border-color:#22c55e;background:rgba(34,197,94,.16);' : ''}">
+          ${x.label} ${x.odds ? `@${x.odds}` : '-'} · EV <strong>${x.ev_pct !== null && x.ev_pct !== undefined ? (x.ev_pct>=0?'+':'')+x.ev_pct+'%' : '-'}</strong>
+          ${x.is_value ? ` (💎1/4凯利≤${x.kelly_pct}%)` : ''}
+        </span>
+      `).join('');
+
+      const tgHtml = Object.entries(tg).map(([k, v]) =>
+        `<span class="score-chip">${k}球 <strong>${(v*100).toFixed(0)}%</strong></span>`
+      ).join('');
+
+      const hmRows = hm.map((row, i) => `
+        <tr>
+          <th style="text-align:center;">主${i}</th>
+          ${row.map(v => {
+            const pct = (v * 100).toFixed(1);
+            const alpha = Math.min(0.85, v * 5.5).toFixed(2);
+            return `<td style="text-align:center;background:rgba(56,189,248,${alpha});color:#fff;font-size:12px;">${pct}%</td>`;
+          }).join('')}
+        </tr>
+      `).join('');
+
+      return `
+        <div style="display:grid;gap:10px;font-size:13px;">
+          <div><strong>双选防冷：</strong>
+            <span class="score-chip">${m.home_team_cn}不败(胜/平) <strong>${(dc['1X']*100).toFixed(1)}%</strong></span>
+            <span class="score-chip">${m.away_team_cn}不败(平/负) <strong>${(dc['X2']*100).toFixed(1)}%</strong></span>
+            <span class="score-chip">分胜负(胜/负) <strong>${(dc['12']*100).toFixed(1)}%</strong></span>
+          </div>
+          <div><strong>体彩让球胜平负：</strong>
+            <span class="score-chip">主让(-1)：胜<strong>${(rm1.win*100).toFixed(1)}%</strong> / 平<strong>${(rm1.draw*100).toFixed(1)}%</strong> / 负<strong>${(rm1.lose*100).toFixed(1)}%</strong></span>
+            <span class="score-chip">主受让(+1)：胜<strong>${(rp1.win*100).toFixed(1)}%</strong> / 平<strong>${(rp1.draw*100).toFixed(1)}%</strong> / 负<strong>${(rp1.lose*100).toFixed(1)}%</strong></span>
+          </div>
+          <div><strong>总进球分布</strong>（最稳区间：<strong style="color:#38bdf8;">${(lot.best_total_goals_range||{}).range || '-'} ${((lot.best_total_goals_range||{}).prob*100||0).toFixed(1)}%</strong>）：
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;">${tgHtml}</div>
+          </div>
+          <div><strong>EV 价值与凯利提示：</strong><div style="color:#4ade80;font-size:12px;margin:4px 0;">${ev.summary || ''}</div><div style="display:flex;gap:6px;flex-wrap:wrap;">${evRows}</div></div>
+          ${hm.length ? `
+            <div><strong>5×5 比分概率热力图（行=主队进球，列=客队进球）：</strong>
+              <table style="margin-top:6px;">
+                <thead><tr><th></th><th style="text-align:center;">客0</th><th style="text-align:center;">客1</th><th style="text-align:center;">客2</th><th style="text-align:center;">客3</th><th style="text-align:center;">客4</th></tr></thead>
+                <tbody>${hmRows}</tbody>
+              </table>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderNewsInjuriesPanel(p, m) {
+      const ni = p.news_injuries || {};
+      const l5 = ni.last_five || {};
+      const injs = ni.injuries || [];
+      const news = ni.news_headlines || [];
+      const lines = [];
+      lines.push(`<div><strong>近期5场战绩：</strong>${m.home_team_cn} <span class="score-chip">${l5.home || '暂缺'}</span> &nbsp;vs&nbsp; ${m.away_team_cn} <span class="score-chip">${l5.away || '暂缺'}</span></div>`);
+      if (injs.length) {
+        lines.push(`<div style="margin-top:6px;"><strong>免费抓取伤停/出战成疑：</strong>${injs.map(x=>`<span class="score-chip">${x}</span>`).join(' ')}</div>`);
+      } else {
+        lines.push(`<div style="margin-top:6px;color:var(--muted);font-size:12px;">官方免费伤停字段暂未放出（赛前1小时官宣首发时自动更新，也可在对话中喊我全网深挖伤停）。</div>`);
+      }
+      if (news.length) {
+        lines.push(`<div style="margin-top:8px;"><strong>赛前新闻快讯：</strong><ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:var(--muted);">${news.map(n=>`<li>${n.url ? `<a href="${n.url}" target="_blank" style="color:#38bdf8;">${n.headline}</a>` : n.headline}</li>`).join('')}</ul></div>`);
+      }
+      return lines.join('');
     }
 
     function renderIntelList() {
@@ -680,8 +769,13 @@
     async function loadReviews() {
       const d = await api('/api/reviews');
       const s = d.summary;
+      const tierHtml = Object.entries(s.tier_stats || {}).map(([k, v]) =>
+        `<span class="score-chip">${k}：<strong>${v.hits}/${v.total} (${(v.acc*100).toFixed(1)}%)</strong></span>`
+      ).join(' ');
+      const clvStr = (s.avg_clv !== null && s.avg_clv !== undefined) ? ` | 平均CLV收盘价值 <strong>${s.avg_clv>=0?'+':''}${s.avg_clv}%</strong>` : '';
+
       document.getElementById('reviewSummaryText').innerHTML = s.total > 0
-        ? `累计核对 <strong>${s.total}</strong> 场 | 胜平负命中 <strong>${s.outcome_hits}/${s.total} (${(s.outcome_acc*100).toFixed(1)}%)</strong> | Top3比分命中 <strong>${s.top3_hits} 场 (${(s.top3_acc*100).toFixed(1)}%)</strong> | 精准首选比分 <strong>${s.exact_top1_hits}</strong> 场 | 🎲偶然红牌/运气偏差 <strong>${s.luck_misses}</strong> 场 | ❌模型/情报误判 <strong>${s.model_misses}</strong> 场 | 🛡️红黄灯避坑 <strong>${s.upset_saves}</strong> 次`
+        ? `累计核对 <strong>${s.total}</strong> 场${clvStr} | 胜平负命中 <strong>${s.outcome_hits}/${s.total} (${(s.outcome_acc*100).toFixed(1)}%)</strong> | Top3比分命中 <strong>${s.top3_hits} 场 (${(s.top3_acc*100).toFixed(1)}%)</strong> | 精准首选比分 <strong>${s.exact_top1_hits}</strong> 场 | 🎲偶然红牌/运气 <strong>${s.luck_misses}</strong> 场 | ❌模型/情报误判 <strong>${s.model_misses}</strong> 场 | 🛡️红黄灯避坑 <strong>${s.upset_saves}</strong> 次` + (tierHtml ? `<div style="margin-top:8px;">按把握度分层命中率：${tierHtml}</div>` : '')
         : '暂无已完场且有预测记录的比赛。等你完成首批预测并待比赛结束后，点右上角「立即核对最新完场比分」即可自动生成复盘报告！';
 
       const attrLabel = {

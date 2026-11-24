@@ -30,7 +30,7 @@ from database import (
     upsert_match,
 )
 from engine.backtest import run_rolling_backtest
-from engine.predictor import ENGINE_CACHE, compute_confidence_score, predict_match
+from engine.predictor import ENGINE_CACHE, compute_confidence_score, predict_match, save_manual_intel
 from engine.review_engine import review_finished_matches, summarize_review_performance
 from engine.scheduler import SCHEDULER
 from notify.feishu_bot import (
@@ -215,7 +215,16 @@ def api_match_detail(match_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="未找到该场比赛")
     pred = detail.get("prediction")
     if pred:
-        for field in ("intel_items_json", "weather_json", "referee_json", "fatigue_json", "top3_scores_json"):
+        for field in (
+            "intel_items_json",
+            "weather_json",
+            "referee_json",
+            "fatigue_json",
+            "top3_scores_json",
+            "lottery_json",
+            "value_ev_json",
+            "news_injuries_json",
+        ):
             key = field.replace("_json", "")
             try:
                 pred[key] = json.loads(pred.get(field) or ("[]" if "items" in field or "scores" in field else "{}"))
@@ -230,9 +239,14 @@ def api_analyze_match(match_id: str, req: AnalyzeRequest) -> Dict[str, Any]:
     if not detail:
         raise HTTPException(status_code=404, detail="未找到该场比赛")
     items = [x.model_dump() for x in req.intel_items]
+    # 同步存入纯文本防冲突情报库（仅保存人工/AI手填项，不含自动天气/体能项）
+    manual_only = [
+        x for x in items if x.get("source_name") not in ("自动赛程体能计算器", "Open-Meteo气象 + 历史裁判档案")
+    ]
+    save_manual_intel(match_id, manual_only)
     pred = predict_match(
         match=detail["match"],
-        ai_intel_items=items,
+        ai_intel_items=manual_only,
         stage=req.stage,
         lock=req.lock,
         fetch_live_summary=True,

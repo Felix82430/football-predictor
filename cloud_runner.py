@@ -118,10 +118,10 @@ def run_daily_brief(slot_tag: str, label: str, force: bool = False) -> Dict[str,
             ]
         pred = predict_match(
             r,
-            ai_intel_items=manual_intel,
+            ai_intel_items=manual_intel if manual_intel else None,
             stage=existing.get("stage", "PREMATCH") if existing else "PREMATCH",
             lock=bool(existing.get("is_locked")) if existing else False,
-            fetch_live_summary=False,
+            fetch_live_summary=True,
         )
         bundle.append({"match": r, "prediction": pred})
 

@@ -118,8 +118,8 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         rows = list_matches_with_predictions(status="SCHEDULED", limit=args.limit)
         results = []
         for r in rows:
-            pred = predict_match(match=r, ai_intel_items=[], stage=args.stage, lock=args.lock, fetch_live_summary=False)
-            results.append({"match_id": r["match_id"], "match": f"{r['home_team_cn']} vs {r['away_team_cn']}", "league": r["league_name"], "kickoff_bjt": r["kickoff_bjt"], "summary": pred["summary_text"], "traffic_light": pred["traffic_light"]})
+            pred = predict_match(match=r, ai_intel_items=None, stage=args.stage, lock=args.lock, fetch_live_summary=True)
+            results.append({"match_id": r["match_id"], "match": f"{r['home_team_cn']} vs {r['away_team_cn']}", "league": r["league_name"], "kickoff_bjt": r["kickoff_bjt"], "summary": pred["summary_text"], "traffic_light": pred["traffic_light"], "confidence": pred["confidence_score"]})
         print(json.dumps({"ok": True, "count": len(results), "results": results}, ensure_ascii=False, indent=2))
 
 

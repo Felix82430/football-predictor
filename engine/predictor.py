@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from config import (
+    DATA_DIR,
     INTEL_LIMITS,
     MARKET_TRAFFIC_LIGHT,
     TOTAL_INTEL_CAP,
@@ -21,7 +22,6 @@ from data_sources.espn_client import fetch_event_summary
 from data_sources.football_data_client import (
     build_referee_profiles,
     load_all_top5_history,
-    load_league_history,
 )
 from data_sources.understat_client import estimate_xg_from_shots, fetch_league_team_xg
 from data_sources.weather_client import fetch_match_weather
@@ -34,6 +34,34 @@ from database import (
 from engine.article_generator import generate_media_article
 from engine.dixon_coles import DixonColesModel, build_score_matrix
 from engine.elo_rating import compute_elo_ratings, compute_rest_and_fatigue, elo_to_expected_goals
+from engine.market_math import compute_ev_and_kelly, invert_market_to_expected_goals
+
+MANUAL_INTEL_PATH = DATA_DIR / "manual_intel.json"
+
+
+def load_manual_intel(match_id: str) -> List[Dict[str, Any]]:
+    """从纯文本 JSON 读取人工/AI 情报账单（彻底避免本地与云端二进制数据库合并冲突）"""
+    if not MANUAL_INTEL_PATH.exists():
+        return []
+    try:
+        data = json.loads(MANUAL_INTEL_PATH.read_text(encoding="utf-8"))
+        return list(data.get(match_id) or [])
+    except Exception:
+        return []
+
+
+def save_manual_intel(match_id: str, items: List[Dict[str, Any]]) -> None:
+    data: Dict[str, Any] = {}
+    if MANUAL_INTEL_PATH.exists():
+        try:
+            data = json.loads(MANUAL_INTEL_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    if items:
+        data[match_id] = items
+    else:
+        data.pop(match_id, None)
+    MANUAL_INTEL_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class LeagueEngineCache:
@@ -41,6 +69,7 @@ class LeagueEngineCache:
 
     def __init__(self) -> None:
         self.all_df: Optional[pd.DataFrame] = None
+        self.euro_df: Optional[pd.DataFrame] = None
         self.elo_map: Dict[str, float] = {}
         self.ref_profiles: Dict[str, Dict[str, float]] = {}
         self.league_models: Dict[str, DixonColesModel] = {}
@@ -53,8 +82,10 @@ class LeagueEngineCache:
         settings = load_settings()
         xi = float(settings.get("dixon_coles_xi", 0.0065))
 
-        self.all_df = load_all_top5_history(force_refresh=force_refresh)
-        self.elo_map = compute_elo_ratings(self.all_df)
+        # 五大联赛用于 Dixon-Coles 模型与裁判档案；叠加 6 大欧洲二线联赛（荷甲/葡超/比甲/土超/苏超/希超）用于全欧 ELO
+        self.all_df = load_all_top5_history(force_refresh=force_refresh, include_euro_secondary=False)
+        self.euro_df = load_all_top5_history(force_refresh=force_refresh, include_euro_secondary=True)
+        self.elo_map = compute_elo_ratings(self.euro_df if not self.euro_df.empty else self.all_df)
         self.ref_profiles = build_referee_profiles(self.all_df)
         self.proxy_xg = estimate_xg_from_shots(self.all_df)
 
@@ -386,6 +417,11 @@ def predict_match(
         if not referee_name and live_summary.get("referee"):
             referee_name = live_summary["referee"]
 
+    # 先提前读取赔率快照（供欧冠小联赛贝叶斯市场锚定、EV价值计算与红绿灯体检复用）
+    odds_history = get_odds_history(match["match_id"])
+    odds_analysis = analyze_odds_trend(odds_history)
+    latest_odds_row = odds_history[-1] if odds_history else {}
+
     # ========== 第 1 层：70% 客观数理底盘 ==========
     lam_h, lam_a, rho = None, None, -0.06
     dc_model = ENGINE_CACHE.league_models.get(league_code)
@@ -395,11 +431,39 @@ def predict_match(
             lam_h, lam_a = eg
             rho = dc_model.rho
 
-    # 欧冠跨联赛或升班马未命中单联赛模型时，用全欧 ELO 平滑估算
-    home_elo = ENGINE_CACHE.elo_map.get(home, 1580.0)
-    away_elo = ENGINE_CACHE.elo_map.get(away, 1580.0)
+    # 欧冠跨联赛或升班马未命中单联赛模型时，用全欧11国联赛 ELO + 市场贝叶斯锚定估算（彻底消灭默认1580克隆人Bug！）
+    has_h_elo = home in ENGINE_CACHE.elo_map
+    has_a_elo = away in ENGINE_CACHE.elo_map
+    home_elo = ENGINE_CACHE.elo_map.get(home, 1460.0)
+    away_elo = ENGINE_CACHE.elo_map.get(away, 1460.0)
+    cross_league_anchored = False
+
     if lam_h is None or lam_a is None:
-        lam_h, lam_a = elo_to_expected_goals(home_elo, away_elo)
+        elo_lam_h, elo_lam_a = elo_to_expected_goals(home_elo, away_elo)
+        # 若有市场赔率且存在缺失 ELO 的非11国冷门球队（如奥甲/挪超/阿塞拜疆等），启用贝叶斯市场锚定融合
+        if odds_analysis["market_prob_home"] is not None:
+            mkt_eg = invert_market_to_expected_goals(
+                (
+                    odds_analysis["market_prob_home"],
+                    odds_analysis["market_prob_draw"],
+                    odds_analysis["market_prob_away"],
+                ),
+                over_under_line=latest_odds_row.get("over_under_line"),
+            )
+            if mkt_eg:
+                if not has_h_elo and not has_a_elo:
+                    anchor_w = 0.80  # 两队均无国内联赛数据 -> 80% 锚定市场实力基准
+                elif not has_h_elo or not has_a_elo:
+                    anchor_w = 0.60  # 一队缺失 -> 60% 锚定市场，40% 保留已知强队 ELO
+                else:
+                    anchor_w = 0.30  # 两队均有真实欧洲联赛 ELO -> 仅轻度 30% 跨联赛校准
+                lam_h = round((1.0 - anchor_w) * elo_lam_h + anchor_w * mkt_eg[0], 3)
+                lam_a = round((1.0 - anchor_w) * elo_lam_a + anchor_w * mkt_eg[1], 3)
+                cross_league_anchored = True
+            else:
+                lam_h, lam_a = elo_lam_h, elo_lam_a
+        else:
+            lam_h, lam_a = elo_lam_h, elo_lam_a
 
     # 融合预期进球（Understat xG / 射门拟合 xG），戳穿“纯靠运气连胜”假象
     h_xg_info = ENGINE_CACHE.get_team_xg(league_code, home)
@@ -407,7 +471,6 @@ def predict_match(
     if h_xg_info and a_xg_info:
         xg_lam_h = 0.5 * (h_xg_info["home_xg_for"] + a_xg_info["away_xg_against"])
         xg_lam_a = 0.5 * (a_xg_info["away_xg_for"] + h_xg_info["home_xg_against"])
-        # 结合近6场 xG 动量
         xg_lam_h = 0.65 * xg_lam_h + 0.35 * (0.5 * (h_xg_info["recent6_xg_for"] + a_xg_info["recent6_xg_against"]))
         xg_lam_a = 0.65 * xg_lam_a + 0.35 * (0.5 * (a_xg_info["recent6_xg_for"] + h_xg_info["recent6_xg_against"]))
 
@@ -416,22 +479,19 @@ def predict_match(
 
     base_matrix = build_score_matrix(lam_h, lam_a, rho=rho)
 
-    # ========== 第 2 层：动态情报修正（自动触发器 + AI 情报官账单） ==========
-    # 1) 多线体能与休息差（自动计算）
+    # ========== 第 2 层：动态情报修正（自动触发器 + 纯文本防冲突人工/AI情报账单） ==========
     with get_conn() as conn:
         recent_db = [dict(r) for r in conn.execute("SELECT home_team, away_team, kickoff_utc, status FROM matches WHERE status='FINISHED'").fetchall()]
     fatigue_info = compute_rest_and_fatigue(
-        home, away, match["kickoff_utc"], ENGINE_CACHE.all_df, recent_db
+        home, away, match["kickoff_utc"], ENGINE_CACHE.euro_df if ENGINE_CACHE.euro_df is not None else ENGINE_CACHE.all_df, recent_db
     )
 
-    # 2) Open-Meteo 极端天气战术触发器
     weather_info = fetch_match_weather(home, away, league_code, match["kickoff_utc"])
-
-    # 3) 异常裁判触发器
     referee_info = evaluate_referee_trigger(referee_name, ENGINE_CACHE.ref_profiles)
 
-    # 组装明细账单（保留外部 AI 情报官传入的伤停/战意/换帅项 + 补充自动触发项）
-    combined_items: List[Dict[str, Any]] = list(ai_intel_items or [])
+    # 若外部未显式传 ai_intel_items，自动加载纯文本防冲突账单 manual_intel.json
+    effective_manual = ai_intel_items if ai_intel_items is not None else load_manual_intel(match["match_id"])
+    combined_items: List[Dict[str, Any]] = list(effective_manual or [])
     existing_cats = {x.get("category") for x in combined_items}
 
     if "fixture_fatigue" not in existing_cats and (
@@ -475,9 +535,7 @@ def predict_match(
     final_lam_a = round(max(0.20, lam_a * (1.0 + total_a_delta)), 3)
     final_matrix = build_score_matrix(final_lam_h, final_lam_a, rho=rho)
 
-    # ========== 第 3 层：盘口走势 + 红绿灯体检 ==========
-    odds_history = get_odds_history(match["match_id"])
-    odds_analysis = analyze_odds_trend(odds_history)
+    # ========== 第 3 层：盘口走势 + 红绿灯体检 + EV价值评估 + 综合把握度评分 ==========
     has_strong_intel = abs(total_h_delta) >= 0.05 or abs(total_a_delta) >= 0.05
 
     traffic_light, traffic_note = compute_traffic_light(
@@ -490,6 +548,27 @@ def predict_match(
         has_strong_intel=has_strong_intel,
         abnormal_odds_shift=odds_analysis["abnormal_shift"],
     )
+    if cross_league_anchored:
+        traffic_note = f"[跨联赛贝叶斯校准] {traffic_note}"
+
+    value_ev = compute_ev_and_kelly(
+        (final_matrix["prob_home"], final_matrix["prob_draw"], final_matrix["prob_away"]),
+        (
+            latest_odds_row.get("home_odds"),
+            latest_odds_row.get("draw_odds"),
+            latest_odds_row.get("away_odds"),
+        ),
+    )
+
+    news_injuries = {
+        "injuries": live_summary.get("injuries") or [],
+        "news_headlines": live_summary.get("news_headlines") or [],
+        "last_five": {
+            "home": (live_summary.get("last_five") or {}).get(home, ""),
+            "away": (live_summary.get("last_five") or {}).get(away, ""),
+        },
+        "starters": live_summary.get("starters") or {},
+    }
 
     outcome_zh = {"H": f"主胜（{match['home_team_cn']}）", "D": "平局", "A": f"客胜（{match['away_team_cn']}）"}[
         final_matrix["recommended_outcome"]
@@ -505,7 +584,7 @@ def predict_match(
         "match_id": match["match_id"],
         "stage": stage,
         "is_locked": 1 if lock else 0,
-        "model_version": settings.get("model_version", "v1.0-试运营"),
+        "model_version": settings.get("model_version", "v1.5-量化体彩版"),
         "created_at": now_iso(),
         "base_home_xg": lam_h,
         "base_away_xg": lam_a,
@@ -536,7 +615,14 @@ def predict_match(
         "summary_text": summary_text,
         "media_article": "",
         "pushed_feishu": 0,
+        "lottery_json": json.dumps(final_matrix.get("lottery_markets") or {}, ensure_ascii=False),
+        "value_ev_json": json.dumps(value_ev, ensure_ascii=False),
+        "news_injuries_json": json.dumps(news_injuries, ensure_ascii=False),
     }
+
+    conf = compute_confidence_score(pred_record)
+    pred_record["confidence_score"] = conf["score"]
+    pred_record["confidence_tier"] = conf["tier"]
 
     # 自动生成自媒体初稿
     pred_record["media_article"] = generate_media_article(

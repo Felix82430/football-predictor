@@ -20,9 +20,11 @@ from database import (
     add_tuning_lesson,
     get_conn,
     get_latest_prediction,
+    get_odds_history,
     now_iso,
     save_review,
 )
+from engine.predictor import compute_confidence_score
 
 
 def _calc_brier(ph: float, pd: float, pa: float, actual: str) -> float:
@@ -160,6 +162,21 @@ def review_finished_matches(custom_notes: Optional[Dict[str, Dict[str, str]]] = 
             if cn.get("tuning_suggestion"):
                 tuning = cn["tuning_suggestion"]
 
+        # 计算收盘赔率价值 CLV（最终封盘隐含概率 - 早期快照隐含概率，正值说明我们提前抓住了大资金方向）
+        clv_diff = None
+        odds_hist = get_odds_history(mid)
+        if len(odds_hist) >= 2:
+            key_map = {"H": "home_implied", "D": "draw_implied", "A": "away_implied"}
+            imp_key = key_map.get(pred["recommended_outcome"], "home_implied")
+            p_open = odds_hist[0].get(imp_key)
+            p_close = odds_hist[-1].get(imp_key)
+            if p_open is not None and p_close is not None:
+                clv_diff = round((p_close - p_open) * 100.0, 2)
+
+        conf_score = pred.get("confidence_score")
+        if conf_score is None:
+            conf_score = compute_confidence_score(pred)["score"]
+
         review_record = {
             "match_id": mid,
             "prediction_id": pred["id"],
@@ -178,6 +195,8 @@ def review_finished_matches(custom_notes: Optional[Dict[str, Dict[str, str]]] = 
             "red_cards_note": red_note,
             "root_cause_analysis": cause,
             "tuning_suggestion": tuning,
+            "confidence_score": conf_score,
+            "clv_diff": clv_diff,
         }
         save_review(review_record)
         reviewed_list.append({**review_record, "home_team_cn": m["home_team_cn"], "away_team_cn": m["away_team_cn"], "league_name": m["league_name"]})
@@ -196,7 +215,7 @@ def _extract_stat_float(stats: Dict[str, str], key: str) -> Optional[float]:
 
 
 def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """汇总一周实盘复盘战绩指标"""
+    """汇总一周实盘复盘战绩指标（含按把握度星级分层命中率 & 平均 CLV 检验）"""
     n = len(reviews)
     if n == 0:
         return {
@@ -210,6 +229,8 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
             "luck_misses": 0,
             "model_misses": 0,
             "upset_saves": 0,
+            "avg_clv": None,
+            "tier_stats": {},
         }
     hits = sum(r["outcome_hit"] for r in reviews)
     top3 = sum(r["top3_score_hit"] for r in reviews)
@@ -218,6 +239,25 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
     luck = sum(1 for r in reviews if r["attribution_type"] == "VARIANCE_LUCK")
     miss = sum(1 for r in reviews if r["attribution_type"] == "MODEL_OR_INTEL_MISS")
     saves = sum(r.get("upset_alert_useful", 0) for r in reviews)
+
+    clvs = [r["clv_diff"] for r in reviews if r.get("clv_diff") is not None]
+    avg_clv = round(sum(clvs) / len(clvs), 2) if clvs else None
+
+    # 按把握度星级分层检验（验证咱们的把握度排序公式是否真有效！）
+    buckets = {
+        "高把握(≥68分)": [r for r in reviews if (r.get("confidence_score") or 50) >= 68],
+        "中把握(55-67分)": [r for r in reviews if 55 <= (r.get("confidence_score") or 50) < 68],
+        "低把握/红灯(<55分)": [r for r in reviews if (r.get("confidence_score") or 50) < 55],
+    }
+    tier_stats = {}
+    for label, grp in buckets.items():
+        if grp:
+            tier_stats[label] = {
+                "total": len(grp),
+                "hits": sum(x["outcome_hit"] for x in grp),
+                "acc": round(sum(x["outcome_hit"] for x in grp) / len(grp), 4),
+            }
+
     return {
         "total": n,
         "outcome_hits": hits,
@@ -229,4 +269,6 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
         "luck_misses": luck,
         "model_misses": miss,
         "upset_saves": saves,
+        "avg_clv": avg_clv,
+        "tier_stats": tier_stats,
     }

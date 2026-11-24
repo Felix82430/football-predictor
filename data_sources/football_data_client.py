@@ -125,13 +125,60 @@ def load_league_history(
     return df
 
 
-def load_all_top5_history(force_refresh: bool = False) -> pd.DataFrame:
-    """加载五大联赛全部历史数据（用于全欧 ELO、欧冠跨联赛预测与综合回测）"""
+# 欧战常客所在的欧洲二线免费联赛（0成本，专门解决欧冠跨联赛球队实力评估盲区）
+EURO_SECONDARY_LEAGUES: Dict[str, str] = {
+    "EREDIVISIE": "N1",   # 荷甲（埃因霍温/费耶诺德/阿贾克斯）
+    "PRIMEIRA": "P1",     # 葡超（波尔图/本菲卡/葡萄牙体育）
+    "BELGIUM": "B1",      # 比甲（布鲁日/圣吉罗斯）
+    "TURKEY": "T1",       # 土超（加拉塔萨雷/费内巴切）
+    "SCOTLAND": "SC0",    # 苏超（凯尔特人/流浪者）
+    "GREECE": "G1",       # 希超（雅典AEK/奥林匹亚科斯）
+}
+
+
+def load_secondary_league_history(league_key: str, fd_code: str, force_refresh: bool = False) -> pd.DataFrame:
+    """加载欧洲二线联赛历史赛果（带 24 小时本地缓存，0 费用且不拖慢云端）"""
+    max_age = 0.0 if force_refresh else 24.0
+    frames: List[pd.DataFrame] = []
+    df_prev = _fetch_csv(PREV_SEASON_FD, fd_code, max_age_hours=168.0)
+    if not df_prev.empty:
+        df_prev = df_prev.copy()
+        df_prev["Season"] = PREV_SEASON_FD
+        frames.append(df_prev)
+    df_curr = _fetch_csv(CURRENT_SEASON_FD, fd_code, max_age_hours=max_age)
+    if not df_curr.empty:
+        df_curr = df_curr.copy()
+        df_curr["Season"] = CURRENT_SEASON_FD
+        frames.append(df_curr)
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames, ignore_index=True)
+    if "HomeTeam" not in df.columns or "FTHG" not in df.columns:
+        return pd.DataFrame()
+    df = df.dropna(subset=["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG"]).copy()
+    df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+    df = df.dropna(subset=["Date"])
+    df["League"] = league_key
+    df["HomeTeam"] = df["HomeTeam"].astype(str).apply(normalize_team_name)
+    df["AwayTeam"] = df["AwayTeam"].astype(str).apply(normalize_team_name)
+    df["FTHG"] = pd.to_numeric(df["FTHG"], errors="coerce")
+    df["FTAG"] = pd.to_numeric(df["FTAG"], errors="coerce")
+    df = df.dropna(subset=["FTHG", "FTAG"])
+    return df[["Date", "League", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "Season"]].sort_values("Date").reset_index(drop=True)
+
+
+def load_all_top5_history(force_refresh: bool = False, include_euro_secondary: bool = False) -> pd.DataFrame:
+    """加载五大联赛全部历史数据（可选附带荷甲/葡超/比甲/土超/苏超/希超用于全欧 ELO 与欧冠建模）"""
     dfs = []
     for code in ("EPL", "LALIGA", "SERIEA", "BUNDESLIGA", "LIGUE1"):
         df = load_league_history(code, include_prev_season=True, force_refresh=force_refresh)
         if not df.empty:
             dfs.append(df)
+    if include_euro_secondary:
+        for k, fd_code in EURO_SECONDARY_LEAGUES.items():
+            sdf = load_secondary_league_history(k, fd_code, force_refresh=force_refresh)
+            if not sdf.empty:
+                dfs.append(sdf)
     if not dfs:
         return pd.DataFrame()
     return pd.concat(dfs, ignore_index=True).sort_values("Date").reset_index(drop=True)
