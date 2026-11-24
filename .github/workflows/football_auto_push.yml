@@ -1,0 +1,76 @@
+name: 足球量化情报官 · 0成本云端自动推送飞书
+
+on:
+  schedule:
+    # 注意：GitHub Actions 使用 UTC 时间（北京时间 = UTC + 8）
+    # 1) 每日 09:00（北京时间）：核对昨晚完场比分并推赛后复盘
+    - cron: "0 1 * * *"
+    # 2) 每日 12:00（北京时间）：午间初判简报
+    - cron: "0 4 * * *"
+    # 3) 每日 20:00（北京时间）：晚间盘口更新简报
+    - cron: "0 12 * * *"
+    # 4) 比赛日赛前 1 小时精准巡检（覆盖北京时间 18:00/20:00/21:00/22:00/23:00/00:00/01:00/02:00/03:00）
+    #    若当前无临场比赛则 3 秒极速退出，几乎不消耗免费额度
+    - cron: "45 9,11,12,13,14,15,16,17,18 * * *"
+
+  # 支持在 GitHub 网页 Actions 页面随时手动点按钮一键触发测试
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "选择要立即执行的任务"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - daily_noon
+          - daily_evening
+          - prematch_1h
+          - daily_review
+      force:
+        description: "是否忽略当日去重强制推送一次"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  run-football-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 拉取项目代码与历史数据库
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 3.12 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: 安装依赖包
+        run: pip install -r requirements.txt
+
+      - name: 执行足球量化分析、复盘与飞书推送
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+        run: |
+          TASK="${{ github.event.inputs.task || 'auto' }}"
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python cloud_runner.py --task "$TASK" $FORCE_FLAG
+
+      - name: 自动保存最新盘口快照、锁单记录与复盘台账到仓库
+        run: |
+          git config user.name "football-predictor-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/football_predictor.db
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: 自动更新赛程盘口快照与复盘记录 [skip ci]"
+            git push
+          fi

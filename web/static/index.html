@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>足球量化情报与赛后复盘系统 v1.0</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #111a2e;
+      --panel-2: #17233d;
+      --border: #243454;
+      --text: #e6edf7;
+      --muted: #8ea1c0;
+      --accent: #38bdf8;
+      --green: #22c55e;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.55;
+    }
+    header {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(11, 17, 32, 0.92); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+    .brand span.badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(56,189,248,.16); color: var(--accent); border: 1px solid rgba(56,189,248,.35); }
+    nav { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tab-btn {
+      background: transparent; color: var(--muted); border: 1px solid transparent;
+      padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: .18s;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--panel); }
+    .tab-btn.active { color: #fff; background: #1d4ed8; border-color: #3b82f6; }
+
+    .container { max-width: 1360px; margin: 0 auto; padding: 20px 24px 60px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .kpi-card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+    }
+    .kpi-label { font-size: 12px; color: var(--muted); }
+    .kpi-val { font-size: 26px; font-weight: 800; margin-top: 4px; color: #fff; }
+    .kpi-sub { font-size: 12px; color: var(--accent); margin-top: 2px; }
+
+    .toolbar {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+      margin-bottom: 16px; background: var(--panel); padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border);
+    }
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .chip {
+      padding: 5px 12px; border-radius: 999px; font-size: 13px; cursor: pointer;
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    }
+    .chip.active { background: var(--accent); color: #061325; border-color: var(--accent); font-weight: 700; }
+
+    .btn {
+      padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 13px; font-weight: 600; transition: .15s;
+    }
+    .btn:hover { filter: brightness(1.15); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; border-color: #3b82f6; color: #fff; }
+    .btn-green { background: #15803d; border-color: #22c55e; color: #fff; }
+    .btn-purple { background: #7e22ce; border-color: #a855f7; color: #fff; }
+    .btn-warn { background: #b45309; border-color: #f59e0b; color: #fff; }
+
+    .match-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(390px, 1fr)); gap: 14px; }
+    .match-card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 15px;
+      cursor: pointer; transition: .18s; position: relative;
+    }
+    .match-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .mc-top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .league-tag { padding: 2px 8px; border-radius: 6px; background: rgba(56,189,248,.14); color: var(--accent); font-weight: 700; }
+    .teams-row { display: flex; justify-content: space-between; align-items: center; font-size: 17px; font-weight: 800; margin-bottom: 10px; gap: 8px; }
+    .score-pill { font-size: 15px; padding: 2px 10px; border-radius: 8px; background: #1e293b; color: #f8fafc; font-family: Consolas, monospace; }
+
+    .prob-bar { height: 10px; border-radius: 999px; overflow: hidden; display: flex; background: #1e293b; margin: 8px 0 6px; }
+    .pb-h { background: #3b82f6; }
+    .pb-d { background: #94a3b8; }
+    .pb-a { background: #f97316; }
+    .prob-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+
+    .top3-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .score-chip { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); }
+    .score-chip strong { color: #38bdf8; }
+
+    .light-badge { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+    .light-GREEN { background: rgba(34,197,94,.16); color: #4ade80; }
+    .light-YELLOW { background: rgba(245,158,11,.16); color: #fbbf24; }
+    .light-RED { background: rgba(239,68,68,.18); color: #f87171; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* 弹窗抽屉：单场深度研报 */
+    .modal-mask {
+      position: fixed; inset: 0; background: rgba(2, 6, 23, 0.78); z-index: 100;
+      display: none; justify-content: flex-end;
+    }
+    .modal-mask.open { display: flex; }
+    .drawer {
+      width: min(760px, 96vw); height: 100vh; overflow-y: auto;
+      background: #0f172a; border-left: 1px solid var(--border); padding: 22px 24px 50px;
+    }
+    .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 16px; }
+    .box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+    .box h4 { margin: 0 0 10px; font-size: 14px; color: var(--accent); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; background: rgba(255,255,255,.02); }
+
+    input, select, textarea {
+      background: #0b1326; color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+    }
+    textarea { width: 100%; min-height: 220px; resize: vertical; }
+    .toast {
+      position: fixed; bottom: 20px; right: 20px; z-index: 200;
+      background: #1e293b; border: 1px solid var(--accent); color: #fff;
+      padding: 10px 16px; border-radius: 10px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    }
+    .delta-pos { color: #4ade80; font-weight: 700; }
+    .delta-neg { color: #f87171; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      ⚽ 足球量化情报官
+      <span class="badge">五大联赛 + 欧冠 · 0成本开源试运营</span>
+    </div>
+    <nav>
+      <button class="tab-btn active" onclick="switchTab('matches', this)">赛程与预测</button>
+      <button class="tab-btn" onclick="switchTab('reviews', this)">每日赛后复盘</button>
+      <button class="tab-btn" onclick="switchTab('backtest', this)">历史滚动回测</button>
+      <button class="tab-btn" onclick="switchTab('settings', this)">飞书推送与设置</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- 顶部核心指标 -->
+    <div class="kpi-grid" id="kpiGrid">
+      <div class="kpi-card"><div class="kpi-label">待开赛焦点场次</div><div class="kpi-val" id="kpiUpcoming">-</div><div class="kpi-sub" id="kpiSnaps">盘口快照：- 条</div></div>
+      <div class="kpi-card"><div class="kpi-label">实盘已锁单场次</div><div class="kpi-val" id="kpiLocked">-</div><div class="kpi-sub">赛前锁死防事后诸葛亮</div></div>
+      <div class="kpi-card"><div class="kpi-label">实盘赛后胜平负命中率</div><div class="kpi-val" id="kpiReviewAcc">-</div><div class="kpi-sub" id="kpiReviewSub">Top3比分命中：-</div></div>
+      <div class="kpi-card"><div class="kpi-label">历史45天无作弊回测</div><div class="kpi-val" id="kpiBtAcc">-</div><div class="kpi-sub" id="kpiBtSub">对照市场赔率基准</div></div>
+    </div>
+
+    <!-- Tab 1: 赛程与预测 -->
+    <div id="tab-matches" class="section active">
+      <div class="toolbar">
+        <div class="filters" id="leagueFilters">
+          <span class="chip active" onclick="setLeague('ALL', this)">全部</span>
+          <span class="chip" onclick="setLeague('EPL', this)">英超</span>
+          <span class="chip" onclick="setLeague('LALIGA', this)">西甲</span>
+          <span class="chip" onclick="setLeague('SERIEA', this)">意甲</span>
+          <span class="chip" onclick="setLeague('BUNDESLIGA', this)">德甲</span>
+          <span class="chip" onclick="setLeague('LIGUE1', this)">法甲</span>
+          <span class="chip" onclick="setLeague('UCL', this)">欧冠</span>
+          <select id="statusFilter" onchange="loadMatches()" style="margin-left:8px;">
+            <option value="SCHEDULED">仅看未开赛</option>
+            <option value="ALL">全部状态</option>
+            <option value="FINISHED">仅看已完场</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="doSync(this)">🔄 同步赛程+抓拍盘口</button>
+          <button class="btn btn-green" onclick="doAnalyzeAll(this)">🧠 一键批量初判</button>
+          <button class="btn btn-purple" onclick="pushDailyFeishu(this)">📲 推飞书今日简报</button>
+        </div>
+      </div>
+      <div class="match-grid" id="matchGrid"></div>
+    </div>
+
+    <!-- Tab 2: 每日赛后复盘 -->
+    <div id="tab-reviews" class="section">
+      <div class="toolbar">
+        <div>
+          <strong>每日赛后核对与归因闭环</strong>
+          <span style="color:var(--muted); font-size:13px; margin-left:8px;">自动区分「红牌/门柱偶然运气」与「模型/情报误判」，防止胡乱改权重</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="runReview(this)">✅ 立即核对最新完场比分</button>
+          <button class="btn btn-purple" onclick="pushReviewFeishu(this)">📲 推飞书复盘报告</button>
+        </div>
+      </div>
+
+      <div class="box">
+        <h4>📊 实盘复盘汇总</h4>
+        <div id="reviewSummaryText" style="font-size:14px; color:var(--text);">暂无复盘数据</div>
+      </div>
+
+      <div class="box">
+        <h4>📝 逐场赛后核对与原因归因</h4>
+        <div id="reviewsTableWrap"></div>
+      </div>
+
+      <div class="box">
+        <h4>💡 经验调优沉淀库（模型迭代依据）</h4>
+        <div id="lessonsWrap"></div>
+      </div>
+    </div>
+
+    <!-- Tab 3: 历史滚动回测 -->
+    <div id="tab-backtest" class="section">
+      <div class="toolbar">
+        <div>
+          <strong>无未来函数历史滚动回测</strong>
+          <span style="color:var(--muted); font-size:13px; margin-left:8px;">每周只看开赛前历史数据训练 Dixon-Coles 模型，直面主流机构收市赔率检验</span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="btDays">
+            <option value="30">回测近 30 天</option>
+            <option value="45" selected>回测近 45 天</option>
+            <option value="60">回测近 60 天</option>
+          </select>
+          <button class="btn btn-primary" onclick="runBacktest(this)">🚀 运行真实滚动回测</button>
+        </div>
+      </div>
+      <div id="backtestContent"></div>
+    </div>
+
+    <!-- Tab 4: 飞书推送与设置 -->
+    <div id="tab-settings" class="section">
+      <div class="box" style="max-width:760px;">
+        <h4>📲 飞书自定义机器人配置（1分钟搞定手机端随时推送）</h4>
+        <p style="font-size:13px; color:var(--muted); margin-top:0;">
+          操作步骤：打开飞书 → 右上角“+”创建个人测试群 → 群设置 → 群机器人 → 添加「自定义机器人」 → 复制 Webhook 地址粘贴到下方即可。
+        </p>
+        <div style="display:grid; gap:12px;">
+          <div>
+            <label style="font-size:13px; color:var(--muted);">飞书机器人 Webhook 地址</label><br/>
+            <input id="cfgWebhook" style="width:100%; margin-top:4px;" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx" />
+          </div>
+          <div>
+            <label style="font-size:13px; color:var(--muted);">签名校验密钥 Secret（如未开启签名可留空）</label><br/>
+            <input id="cfgSecret" style="width:100%; margin-top:4px;" placeholder="可选" />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label style="font-size:13px; color:var(--muted);">每日定时推飞书时间（逗号分隔，24小时制）</label><br/>
+              <input id="cfgPushTimes" style="width:100%; margin-top:4px;" placeholder="12:00,20:00" />
+            </div>
+            <div>
+              <label style="font-size:13px; color:var(--muted);">次日自动赛后复盘推送时间</label><br/>
+              <input id="cfgReviewTime" style="width:100%; margin-top:4px;" placeholder="09:30" />
+            </div>
+          </div>
+          <div style="display:flex; gap:20px; flex-wrap:wrap; font-size:13px;">
+            <label><input id="cfgAutoPush" type="checkbox" /> 开启每日定时自动推送飞书</label>
+            <label><input id="cfgPrematch1h" type="checkbox" /> 开启每场赛前 1 小时自动更新（含首发+终盘+锁单）</label>
+          </div>
+          <div id="schedStatusBox" style="font-size:12px; color:#38bdf8; background:#0b1326; padding:10px 12px; border-radius:8px; border:1px solid var(--border);">
+            定时守护状态加载中...
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label style="font-size:13px; color:var(--muted);">Dixon-Coles 时间衰减 xi（默认 0.0065）</label><br/>
+              <input id="cfgXi" type="number" step="0.0005" style="width:100%; margin-top:4px;" />
+            </div>
+            <div>
+              <label style="font-size:13px; color:var(--muted);">预期进球 xG 融合权重（默认 0.35）</label><br/>
+              <input id="cfgXgWeight" type="number" step="0.05" min="0" max="0.8" style="width:100%; margin-top:4px;" />
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; margin-top:6px;">
+            <button class="btn btn-primary" onclick="saveSettings()">💾 保存配置</button>
+            <button class="btn btn-green" onclick="testFeishu(this)">🧪 发送飞书测试卡片</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 单场深度研报抽屉 -->
+  <div class="modal-mask" id="detailModal" onclick="if(event.target===this) closeDrawer()">
+    <div class="drawer" id="drawerBody"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let currentLeague = 'ALL';
+    let activeMatchId = null;
+    let activeIntelItems = [];
+
+    const INTEL_CATS = {
+      injuries_lineup: '核心伤停 / 临场首发 (±15%)',
+      fixture_fatigue: '多线作战与休息差 (±10%)',
+      motivation_context: '球队战意与赛程夹击 (±12%)',
+      coach_morale: '换帅 / 更衣室动荡 (±6%)',
+      weather_referee: '极端天气 / 异常裁判 (±5%)',
+    };
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => t.style.display = 'none', 3200);
+    }
+
+    async function api(url, opts = {}) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...opts,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.error || '请求失败');
+      return data;
+    }
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      if (btn) btn.classList.add('active');
+      if (name === 'reviews') loadReviews();
+      if (name === 'backtest') loadLatestBacktest();
+      if (name === 'settings') loadSettings();
+    }
+
+    function setLeague(lg, el) {
+      currentLeague = lg;
+      document.querySelectorAll('#leagueFilters .chip').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      loadMatches();
+    }
+
+    async function loadOverview() {
+      try {
+        const d = await api('/api/overview');
+        document.getElementById('kpiUpcoming').textContent = d.upcoming_matches;
+        document.getElementById('kpiSnaps').textContent = `盘口快照：${d.odds_snapshots} 条`;
+        document.getElementById('kpiLocked').textContent = d.locked_predictions;
+
+        const rs = d.review_summary;
+        if (rs && rs.total > 0) {
+          document.getElementById('kpiReviewAcc').textContent = (rs.outcome_acc * 100).toFixed(1) + '%';
+          document.getElementById('kpiReviewSub').textContent = `核对 ${rs.total} 场 · Top3命中 ${(rs.top3_acc*100).toFixed(1)}%`;
+        } else {
+          document.getElementById('kpiReviewAcc').textContent = '待核对';
+          document.getElementById('kpiReviewSub').textContent = '赛后点击复盘自动统计';
+        }
+
+        const bt = d.latest_backtest;
+        if (bt) {
+          document.getElementById('kpiBtAcc').textContent = (bt.outcome_accuracy * 100).toFixed(1) + '%';
+          const mkt = bt.market_accuracy ? `市场基准 ${(bt.market_accuracy*100).toFixed(1)}%` : '';
+          document.getElementById('kpiBtSub').textContent = `${bt.total_matches}场回测 · Top3 ${(bt.top3_score_accuracy*100).toFixed(1)}% ${mkt}`;
+        } else {
+          document.getElementById('kpiBtAcc').textContent = '未运行';
+          document.getElementById('kpiBtSub').textContent = '点上方「历史滚动回测」一键验准';
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    async function loadMatches() {
+      const status = document.getElementById('statusFilter').value;
+      const d = await api(`/api/matches?league=${currentLeague}&status=${status}&limit=80`);
+      const grid = document.getElementById('matchGrid');
+      if (!d.items.length) {
+        grid.innerHTML = `<div class="box" style="grid-column:1/-1;text-align:center;color:var(--muted);">暂无符合条件的赛程，请先点击右上角「🔄 同步赛程+抓拍盘口」。</div>`;
+        return;
+      }
+      const outMap = { H: '主胜', D: '平局', A: '客胜' };
+      const lightMap = { GREEN: '🟢 稳健一致', YELLOW: '🟡 留意冷门/价值', RED: '🔴 高警分歧' };
+
+      grid.innerHTML = d.items.map(m => {
+        const hasPred = !!m.prediction_id;
+        const ph = hasPred ? (m.final_prob_home * 100).toFixed(1) : 0;
+        const pd = hasPred ? (m.final_prob_draw * 100).toFixed(1) : 0;
+        const pa = hasPred ? (m.final_prob_away * 100).toFixed(1) : 0;
+        const scoreShow = m.status === 'SCHEDULED' ? 'VS' : `${m.home_score ?? '-'} : ${m.away_score ?? '-'}`;
+        const top3Html = (m.top3_scores || []).map(x => `<span class="score-chip"><strong>${x.score}</strong> ${(x.prob*100).toFixed(0)}%</span>`).join('');
+        const lightCls = `light-${m.traffic_light || 'GREEN'}`;
+        const lockTag = m.pred_locked ? '<span style="color:#38bdf8;font-weight:700;">🔒已锁盘</span>' : '';
+
+        return `
+          <div class="match-card" onclick="openDetail('${m.match_id}')">
+            <div class="mc-top">
+              <div><span class="league-tag">${m.league_name}</span> &nbsp;${m.kickoff_bjt}</div>
+              <div>${lockTag} ${hasPred ? `<span class="light-badge ${lightCls}">${lightMap[m.traffic_light] || ''}</span>` : '<span style="color:var(--muted);">待分析</span>'}</div>
+            </div>
+            <div class="teams-row">
+              <span>${m.home_team_cn}</span>
+              <span class="score-pill">${scoreShow}</span>
+              <span>${m.away_team_cn}</span>
+            </div>
+            ${hasPred ? `
+              <div class="prob-bar">
+                <div class="pb-h" style="width:${ph}%"></div>
+                <div class="pb-d" style="width:${pd}%"></div>
+                <div class="pb-a" style="width:${pa}%"></div>
+              </div>
+              <div class="prob-labels">
+                <span>主胜 ${ph}%</span>
+                <span>平 ${pd}% · 主推 <strong style="color:#fff;">${outMap[m.recommended_outcome]}</strong></span>
+                <span>客胜 ${pa}%</span>
+              </div>
+              <div class="top3-row">
+                <span style="font-size:12px;color:var(--muted);">Top3比分：</span>${top3Html}
+              </div>
+              <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
+                <span>预期进球 ${Number(m.final_home_xg).toFixed(2)} : ${Number(m.final_away_xg).toFixed(2)}</span>
+                <span>情报修正 主${(m.home_intel_delta*100)>=0?'+':''}${(m.home_intel_delta*100).toFixed(1)}% / 客${(m.away_intel_delta*100)>=0?'+':''}${(m.away_intel_delta*100).toFixed(1)}%</span>
+              </div>
+            ` : `<div style="font-size:13px;color:var(--muted);margin-top:8px;">点击进入单场深度研报，一键测算三层模型与情报加减分</div>`}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderOddsSvg(history) {
+      if (!history || history.length < 2) {
+        return `<div style="font-size:12px;color:var(--muted);">当前已抓拍 ${history ? history.length : 0} 次盘口快照，累计 ≥ 2 次后自动绘制初盘→临场走势折线图。</div>`;
+      }
+      const w = 620, h = 150, pad = 26;
+      const xs = history.map((_, i) => pad + (i / (history.length - 1)) * (w - pad * 2));
+      const yFor = p => h - pad - p * (h - pad * 2);
+      const pathOf = key => history.map((pt, i) => `${i===0?'M':'L'}${xs[i].toFixed(1)},${yFor(pt[key]||0).toFixed(1)}`).join(' ');
+
+      return `
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:150px;background:#0a1120;border-radius:8px;border:1px solid var(--border);">
+          <line x1="${pad}" y1="${yFor(0.5)}" x2="${w-pad}" y2="${yFor(0.5)}" stroke="#1e293b" stroke-dasharray="4 4"/>
+          <path d="${pathOf('home_implied')}" fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+          <path d="${pathOf('draw_implied')}" fill="none" stroke="#94a3b8" stroke-width="2"/>
+          <path d="${pathOf('away_implied')}" fill="none" stroke="#f97316" stroke-width="2.5"/>
+          <text x="${pad}" y="16" fill="#3b82f6" font-size="11">● 主胜隐含概率</text>
+          <text x="${pad+105}" y="16" fill="#94a3b8" font-size="11">● 平局</text>
+          <text x="${pad+160}" y="16" fill="#f97316" font-size="11">● 客胜隐含概率</text>
+        </svg>
+      `;
+    }
+
+    async function openDetail(matchId) {
+      activeMatchId = matchId;
+      const d = await api(`/api/matches/${matchId}`);
+      const m = d.match;
+      const p = d.prediction;
+      activeIntelItems = p ? (p.intel_items || []) : [];
+
+      const drawer = document.getElementById('drawerBody');
+      const lightMap = { GREEN: '🟢 稳健一致', YELLOW: '🟡 留意冷门/价值', RED: '🔴 红灯高警' };
+
+      drawer.innerHTML = `
+        <div class="drawer-head">
+          <div>
+            <div style="font-size:12px;color:var(--accent);margin-bottom:4px;">${m.league_name} · ${m.kickoff_bjt} · ${m.venue || '主场'}</div>
+            <h2 style="margin:0;font-size:22px;">${m.home_team_cn} vs ${m.away_team_cn}</h2>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" onclick="reanalyzeMatch('PREMATCH', false)">🧠 立即测算</button>
+            <button class="btn" onclick="closeDrawer()">✕ 关闭</button>
+          </div>
+        </div>
+
+        ${p ? `
+          <div class="box">
+            <h4>🎯 核心研判与概率分布 ${p.is_locked ? '（🔒 实盘已锁单）' : '（未锁单）'}</h4>
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+              <div><strong>最终预期进球：</strong>${p.final_home_xg.toFixed(2)} : ${p.final_away_xg.toFixed(2)}（数理基准 ${p.base_home_xg.toFixed(2)} : ${p.base_away_xg.toFixed(2)}）</div>
+              <span class="light-badge light-${p.traffic_light}">${lightMap[p.traffic_light] || p.traffic_light}</span>
+            </div>
+            <div class="prob-bar">
+              <div class="pb-h" style="width:${(p.final_prob_home*100).toFixed(1)}%"></div>
+              <div class="pb-d" style="width:${(p.final_prob_draw*100).toFixed(1)}%"></div>
+              <div class="pb-a" style="width:${(p.final_prob_away*100).toFixed(1)}%"></div>
+            </div>
+            <div class="prob-labels">
+              <span>主胜 ${(p.final_prob_home*100).toFixed(1)}% ${p.market_prob_home ? `(市场${(p.market_prob_home*100).toFixed(1)}%)`:''}</span>
+              <span>平局 ${(p.final_prob_draw*100).toFixed(1)}% ${p.market_prob_draw ? `(市场${(p.market_prob_draw*100).toFixed(1)}%)`:''}</span>
+              <span>客胜 ${(p.final_prob_away*100).toFixed(1)}% ${p.market_prob_away ? `(市场${(p.market_prob_away*100).toFixed(1)}%)`:''}</span>
+            </div>
+            <div class="top3-row" style="margin-top:8px;">
+              <span style="font-size:13px;color:var(--muted);">Top 3 比分：</span>
+              ${(p.top3_scores || []).map(x => `<span class="score-chip"><strong>${x.score}</strong> (${(x.prob*100).toFixed(1)}%)</span>`).join('')}
+              <span class="score-chip">大2.5球 ${(p.over_25_prob*100).toFixed(1)}%</span>
+              <span class="score-chip">双方进球 ${(p.btts_prob*100).toFixed(1)}%</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+              <button class="btn btn-warn" onclick="lockPred(${p.id})">🔒 赛前锁单存档</button>
+              <button class="btn btn-green" onclick="reanalyzeMatch('FINAL', true)">⚡ 临场终审重算并锁单</button>
+              <button class="btn btn-purple" onclick="pushSingleFeishu('${m.match_id}')">📲 推飞书单场卡片</button>
+            </div>
+          </div>
+
+          <div class="box">
+            <h4>🧾 透明情报「加减分明细账」（严格封顶防拍脑袋）</h4>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+              • 多线体能：${(p.fatigue && p.fatigue.summary) || '无'}<br/>
+              • 球场天气：${(p.weather && p.weather.summary) || '无'}<br/>
+              • 主裁判尺度：${(p.referee && p.referee.summary) || '无'}
+            </div>
+            <div id="intelListWrap"></div>
+            <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);display:grid;grid-template-columns:1.3fr .6fr .6fr;gap:8px;">
+              <select id="newIntelCat">${Object.entries(INTEL_CATS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+              <input id="newIntelH" type="number" step="1" placeholder="主队修正%(如-8)" />
+              <input id="newIntelA" type="number" step="1" placeholder="客队修正%(如+5)" />
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <input id="newIntelReason" style="flex:1;" placeholder="填写依据（如：主队头号中锋拉伤缺阵 / 4天后欧冠半决赛大幅轮换）" />
+              <button class="btn btn-primary" onclick="addIntelAndRecalc()">+ 加入账单重算</button>
+            </div>
+          </div>
+
+          <div class="box">
+            <h4>📈 盘口走势快照 & 红绿灯体检</h4>
+            <div style="font-size:13px;margin-bottom:8px;">${p.odds_trend_note || ''}<br/><span style="color:var(--accent);">${p.traffic_note || ''}</span></div>
+            ${renderOddsSvg(d.odds_history)}
+          </div>
+
+          <div class="box">
+            <h4>✍️ 自媒体赛前深度长文草稿（一键复制发稿）</h4>
+            <textarea id="mediaDraft">${p.media_article || ''}</textarea>
+            <button class="btn btn-green" style="margin-top:8px;" onclick="copyDraft()">📋 一键复制全文</button>
+          </div>
+        ` : `<div class="box" style="text-align:center;color:var(--muted);">该场尚未运行模型，请点击右上角「🧠 立即测算」。</div>`}
+      `;
+
+      renderIntelList();
+      document.getElementById('detailModal').classList.add('open');
+    }
+
+    function renderIntelList() {
+      const wrap = document.getElementById('intelListWrap');
+      if (!wrap) return;
+      if (!activeIntelItems.length) {
+        wrap.innerHTML = `<div style="font-size:12px;color:var(--muted);">当前无额外加减分项（完全基于 70% 客观数理底座）。你可以在下方添加伤停/战意/轮换情报，或直接在 Antigravity 对话里让我联网核查并写入。</div>`;
+        return;
+      }
+      wrap.innerHTML = `<table>
+        <thead><tr><th>维度</th><th>主队修正</th><th>客队修正</th><th>依据说明</th><th></th></tr></thead>
+        <tbody>
+          ${activeIntelItems.map((it, idx) => `
+            <tr>
+              <td>${it.label || it.category}</td>
+              <td class="${it.home_delta>=0?'delta-pos':'delta-neg'}">${(it.home_delta*100)>=0?'+':''}${(it.home_delta*100).toFixed(1)}%</td>
+              <td class="${it.away_delta>=0?'delta-pos':'delta-neg'}">${(it.away_delta*100)>=0?'+':''}${(it.away_delta*100).toFixed(1)}%</td>
+              <td>${it.reason || '-'}</td>
+              <td><button class="btn" style="padding:2px 8px;" onclick="removeIntel(${idx})">删</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+    }
+
+    async function addIntelAndRecalc() {
+      const cat = document.getElementById('newIntelCat').value;
+      const hPct = parseFloat(document.getElementById('newIntelH').value || '0');
+      const aPct = parseFloat(document.getElementById('newIntelA').value || '0');
+      const reason = document.getElementById('newIntelReason').value.trim();
+      if (!reason) return showToast('请先写明加减分依据，保证每分都有理有据！');
+      activeIntelItems.push({
+        category: cat,
+        home_delta: hPct / 100.0,
+        away_delta: aPct / 100.0,
+        reason,
+        source_name: '手动录入',
+      });
+      await reanalyzeMatch('PREMATCH', false);
+    }
+
+    async function removeIntel(idx) {
+      activeIntelItems.splice(idx, 1);
+      await reanalyzeMatch('PREMATCH', false);
+    }
+
+    async function reanalyzeMatch(stage, lock) {
+      showToast('正在运行三层混合引擎重算...');
+      await api(`/api/analyze/${activeMatchId}`, {
+        method: 'POST',
+        body: JSON.stringify({ stage, lock, intel_items: activeIntelItems }),
+      });
+      showToast(lock ? '已重算并锁死实盘记录！' : '测算完成！');
+      await openDetail(activeMatchId);
+      loadMatches();
+      loadOverview();
+    }
+
+    async function lockPred(predId) {
+      await api(`/api/predictions/${predId}/lock`, { method: 'POST' });
+      showToast('已锁死赛前实盘预测，赛后将自动核对复盘！');
+      openDetail(activeMatchId);
+      loadMatches();
+      loadOverview();
+    }
+
+    function copyDraft() {
+      const ta = document.getElementById('mediaDraft');
+      ta.select();
+      document.execCommand('copy');
+      showToast('已复制自媒体赛前长文草稿！');
+    }
+
+    function closeDrawer() {
+      document.getElementById('detailModal').classList.remove('open');
+    }
+
+    async function doSync(btn) {
+      btn.disabled = true;
+      showToast('正在同步五大联赛+欧冠赛程并抓拍最新盘口...');
+      try {
+        const res = await api('/api/sync', { method: 'POST' });
+        showToast(`同步完成：${res.synced_matches} 场赛程，新增 ${res.new_odds_snapshots} 条盘口快照`);
+        loadMatches();
+        loadOverview();
+      } catch (e) { showToast('同步失败：' + e.message); }
+      finally { btn.disabled = false; }
+    }
+
+    async function doAnalyzeAll(btn) {
+      btn.disabled = true;
+      showToast('正在用 Dixon-Coles + xG + 天气 + 赛程体能批量初判...');
+      try {
+        const res = await api('/api/analyze-upcoming', { method: 'POST' });
+        showToast(`已完成 ${res.analyzed_count} 场焦点赛事初判！`);
+        loadMatches();
+        loadOverview();
+      } catch (e) { showToast('批量初判失败：' + e.message); }
+      finally { btn.disabled = false; }
+    }
+
+    async function pushDailyFeishu(btn) {
+      btn.disabled = true;
+      try {
+        const res = await api('/api/feishu/push-daily', { method: 'POST' });
+        showToast(res.ok ? '已成功推送到飞书群！' : res.error);
+      } catch (e) { showToast(e.message); }
+      finally { btn.disabled = false; }
+    }
+
+    async function pushSingleFeishu(matchId) {
+      const res = await api(`/api/feishu/push-match/${matchId}`, { method: 'POST' });
+      showToast(res.ok ? '单场深度卡片已推飞书！' : res.error);
+    }
+
+    async function pushReviewFeishu(btn) {
+      btn.disabled = true;
+      try {
+        const res = await api('/api/feishu/push-review', { method: 'POST' });
+        showToast(res.ok ? '每日赛后复盘卡片已推飞书！' : res.error);
+      } finally { btn.disabled = false; }
+    }
+
+    async function runReview(btn) {
+      btn.disabled = true;
+      showToast('正在同步完场比分并执行偏差归因复盘...');
+      try {
+        const res = await api('/api/review/run', { method: 'POST' });
+        showToast(`赛后核对完成，本次复盘 ${res.newly_reviewed} 场！`);
+        loadReviews();
+        loadOverview();
+      } catch (e) { showToast(e.message); }
+      finally { btn.disabled = false; }
+    }
+
+    async function loadReviews() {
+      const d = await api('/api/reviews');
+      const s = d.summary;
+      document.getElementById('reviewSummaryText').innerHTML = s.total > 0
+        ? `累计核对 <strong>${s.total}</strong> 场 | 胜平负命中 <strong>${s.outcome_hits}/${s.total} (${(s.outcome_acc*100).toFixed(1)}%)</strong> | Top3比分命中 <strong>${s.top3_hits} 场 (${(s.top3_acc*100).toFixed(1)}%)</strong> | 精准首选比分 <strong>${s.exact_top1_hits}</strong> 场 | 🎲偶然红牌/运气偏差 <strong>${s.luck_misses}</strong> 场 | ❌模型/情报误判 <strong>${s.model_misses}</strong> 场 | 🛡️红黄灯避坑 <strong>${s.upset_saves}</strong> 次`
+        : '暂无已完场且有预测记录的比赛。等你完成首批预测并待比赛结束后，点右上角「立即核对最新完场比分」即可自动生成复盘报告！';
+
+      const attrLabel = {
+        ACCURATE: '<span style="color:#4ade80;font-weight:700;">✅ 准确命中</span>',
+        VARIANCE_LUCK: '<span style="color:#fbbf24;font-weight:700;">🎲 偶然红牌/运气</span>',
+        MODEL_OR_INTEL_MISS: '<span style="color:#f87171;font-weight:700;">❌ 模型/情报误判</span>',
+      };
+
+      document.getElementById('reviewsTableWrap').innerHTML = d.reviews.length ? `
+        <table>
+          <thead><tr><th>赛事与对阵</th><th>赛前主推 / Top3</th><th>实际比分</th><th>归因判定</th><th>复盘原因与改进建议</th></tr></thead>
+          <tbody>
+            ${d.reviews.map(r => `
+              <tr>
+                <td><strong>[${r.league_name}]</strong><br/>${r.home_team_cn} vs ${r.away_team_cn}<br/><span style="color:var(--muted);font-size:11px;">${r.kickoff_bjt}</span></td>
+                <td>主推 ${r.recommended_outcome}<br/><span style="color:var(--muted);font-size:12px;">${(r.top3_scores||[]).map(x=>x.score).join('/')}</span></td>
+                <td><strong style="font-size:16px;">${r.actual_home_score} - ${r.actual_away_score}</strong><br/>${r.top3_score_hit ? '<span style="color:#38bdf8;font-size:11px;">🎯中Top3</span>':''}</td>
+                <td>${attrLabel[r.attribution_type] || r.attribution_type}<br/><span style="color:var(--muted);font-size:11px;">红牌：${r.red_cards_note || '无'}</span></td>
+                <td>${r.root_cause_analysis}<div style="color:#38bdf8;font-size:12px;margin-top:4px;">建议：${r.tuning_suggestion || '-'}</div></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<div style="color:var(--muted);font-size:13px;">暂无逐场复盘明细</div>';
+
+      document.getElementById('lessonsWrap').innerHTML = d.lessons.length ? `
+        <table>
+          <thead><tr><th>类别</th><th>暴露的问题</th><th>调优行动建议</th><th>状态</th></tr></thead>
+          <tbody>
+            ${d.lessons.map(l => `<tr><td>${l.category}</td><td>${l.lesson}</td><td>${l.suggested_action}</td><td>${l.status}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      ` : '<div style="color:var(--muted);font-size:13px;">暂无待调优记录（只有真正属于模型/情报误判时才会记入此库，不会受单场红牌运气干扰）。</div>';
+    }
+
+    async function runBacktest(btn) {
+      btn.disabled = true;
+      const days = parseInt(document.getElementById('btDays').value, 10);
+      showToast(`正在执行五大联赛近 ${days} 天无未来函数真实滚动回测（约需5~10秒）...`);
+      try {
+        await api('/api/backtest', { method: 'POST', body: JSON.stringify({ lookback_days: days }) });
+        showToast('历史回测完成！');
+        loadLatestBacktest();
+        loadOverview();
+      } catch (e) { showToast('回测失败：' + e.message); }
+      finally { btn.disabled = false; }
+    }
+
+    async function loadLatestBacktest() {
+      const d = await api('/api/backtest/latest');
+      const wrap = document.getElementById('backtestContent');
+      const bt = d.result;
+      if (!bt) {
+        wrap.innerHTML = `<div class="box" style="text-align:center;color:var(--muted);">尚未运行历史滚动回测，请点击上方「🚀 运行真实滚动回测」检验数理底盘的真实水准！</div>`;
+        return;
+      }
+      const lgs = Object.values((bt.details && bt.details.league_summaries) || {});
+      const recent = (bt.details && bt.details.recent_matches) || [];
+      wrap.innerHTML = `
+        <div class="box">
+          <h4>🏆 回测核心成绩单（区间：${bt.date_from} 至 ${bt.date_to}，共 ${bt.total_matches} 场真实比赛）</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+            <div><span class="kpi-label">咱的数理底座胜平负命中率</span><div style="font-size:24px;font-weight:800;color:#4ade80;">${(bt.outcome_accuracy*100).toFixed(1)}%</div></div>
+            <div><span class="kpi-label">同期主流机构赔率基准命中率</span><div style="font-size:24px;font-weight:800;color:#38bdf8;">${bt.market_accuracy ? (bt.market_accuracy*100).toFixed(1)+'%' : '-'}</div></div>
+            <div><span class="kpi-label">Top 3 推荐比分命中率</span><div style="font-size:24px;font-weight:800;color:#fbbf24;">${(bt.top3_score_accuracy*100).toFixed(1)}%</div></div>
+            <div><span class="kpi-label">Brier 校准误差（越小越准）</span><div style="font-size:24px;font-weight:800;">${bt.brier_score}</div></div>
+          </div>
+        </div>
+        <div class="box">
+          <h4>🌍 五大联赛分项表现</h4>
+          <table>
+            <thead><tr><th>联赛</th><th>回测样本数</th><th>胜平负命中率</th><th>Top 3 比分命中率</th><th>Brier 误差</th></tr></thead>
+            <tbody>
+              ${lgs.map(x => `<tr><td>${x.league_name}</td><td>${x.total} 场</td><td><strong>${(x.outcome_acc*100).toFixed(1)}%</strong></td><td>${(x.top3_acc*100).toFixed(1)}%</td><td>${x.brier}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="box">
+          <h4>📋 最近 40 场滚动回测抽查明细</h4>
+          <table>
+            <thead><tr><th>日期</th><th>联赛</th><th>对阵</th><th>模型主推</th><th>实际比分</th><th>Top 3 预测</th><th>结果</th></tr></thead>
+            <tbody>
+              ${recent.map(r => `<tr>
+                <td>${r.date}</td><td>${r.league_name}</td><td>${r.home_team} vs ${r.away_team}</td>
+                <td>${r.pred_outcome} (${(r.prob_home*100).toFixed(0)}/${(r.prob_draw*100).toFixed(0)}/${(r.prob_away*100).toFixed(0)})</td>
+                <td><strong>${r.actual_score}</strong></td>
+                <td>${(r.top3_scores||[]).join(' / ')}</td>
+                <td>${r.hit ? '<span style="color:#4ade80;">✅中</span>' : '<span style="color:#f87171;">❌偏</span>'} ${r.top3_hit ? '<span style="color:#38bdf8;">🎯中比分</span>' : ''}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function loadSettings() {
+      const s = await api('/api/settings');
+      document.getElementById('cfgWebhook').value = s.feishu_webhook || '';
+      document.getElementById('cfgSecret').value = s.feishu_secret || '';
+      document.getElementById('cfgXi').value = s.dixon_coles_xi ?? 0.0065;
+      document.getElementById('cfgXgWeight').value = s.xg_blend_weight ?? 0.35;
+      document.getElementById('cfgPushTimes').value = (s.daily_push_times || ['12:00', '20:00']).join(',');
+      document.getElementById('cfgReviewTime').value = s.review_push_time || '09:30';
+      document.getElementById('cfgAutoPush').checked = s.auto_push_enabled !== false;
+      document.getElementById('cfgPrematch1h').checked = s.prematch_1h_enabled !== false;
+      const st = s.scheduler_status || {};
+      document.getElementById('schedStatusBox').innerHTML =
+        `🟢 自动守护状态：<strong>${st.running ? '正在后台运行' : '未运行'}</strong> | ` +
+        `每日推送：<strong>${(st.daily_push_times || []).join(' & ')}</strong> | ` +
+        `赛前1小时更新：<strong>${st.prematch_1h_enabled ? '已开启' : '已关闭'}</strong> | ` +
+        `次日复盘：<strong>${st.review_push_time || '09:30'}</strong><br/>` +
+        `最近巡检：${st.last_check_at || '即将开始'} · 动态：${st.last_action_log || '待命'}`;
+    }
+
+    async function saveSettings() {
+      const timesRaw = document.getElementById('cfgPushTimes').value || '12:00,20:00';
+      const timesArr = timesRaw.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean);
+      await api('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          feishu_webhook: document.getElementById('cfgWebhook').value.trim(),
+          feishu_secret: document.getElementById('cfgSecret').value.trim(),
+          dixon_coles_xi: parseFloat(document.getElementById('cfgXi').value || '0.0065'),
+          xg_blend_weight: parseFloat(document.getElementById('cfgXgWeight').value || '0.35'),
+          daily_push_times: timesArr,
+          review_push_time: document.getElementById('cfgReviewTime').value.trim() || '09:30',
+          auto_push_enabled: document.getElementById('cfgAutoPush').checked,
+          prematch_1h_enabled: document.getElementById('cfgPrematch1h').checked,
+        }),
+      });
+      showToast('配置与定时推送计划已保存！');
+      loadSettings();
+    }
+
+    async function testFeishu(btn) {
+      btn.disabled = true;
+      try {
+        await saveSettings();
+        const res = await api('/api/feishu/test', { method: 'POST' });
+        showToast(res.ok ? '飞书测试卡片发送成功，快看手机！' : res.error);
+      } finally { btn.disabled = false; }
+    }
+
+    // 首次加载
+    loadOverview();
+    loadMatches();
+  </script>
+</body>
+</html>

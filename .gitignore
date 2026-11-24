@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+# 严禁将本地含飞书 Webhook 的设置文件传到 GitHub（云端改用 GitHub Secrets 加密存储！）
+data/settings.json
+data/cache/
+data/*.db-wal
+data/*.db-shm
