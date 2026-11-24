@@ -133,12 +133,14 @@ def run_daily_brief(slot_tag: str, label: str, force: bool = False) -> Dict[str,
     if res.get("ok"):
         for item in bundle:
             mark_feishu_pushed(item["prediction"]["id"])
-        mark_auto_pushed(push_key, "DAILY_BRIEF", f"{label} 推送 {len(bundle)} 场")
+        # 仅正式定时任务写入正式打卡键；手动 force 测试绝不占用正式打卡名额
+        if not force:
+            mark_auto_pushed(push_key, "DAILY_BRIEF", f"{label} 推送 {len(bundle)} 场")
     return {"ok": res.get("ok"), "count": len(bundle), "feishu": res, "sync": sync_res}
 
 
 def run_prematch_1h(force: bool = False) -> Dict[str, Any]:
-    """检查未来 30 ~ 90 分钟内开打的比赛，精准触发赛前 1 小时临场更新与锁盘"""
+    """检查未来 15 ~ 115 分钟内开打的比赛，容错 GitHub Actions 队列延迟，精准触发赛前约 1 小时临场更新与锁盘"""
     sync_res = sync_quick(days_back=0, days_ahead=1)
     now_utc = datetime.now(timezone.utc)
     rows = list_matches_with_predictions(status="SCHEDULED", limit=50)
@@ -153,8 +155,8 @@ def run_prematch_1h(force: bool = False) -> Dict[str, Any]:
         except Exception:
             continue
         mins_left = (kdt - now_utc).total_seconds() / 60.0
-        # 考虑 GitHub Actions cron 存在 5~15 分钟延迟，窗口设为 25~95 分钟最稳妥，且靠 push_key 保证每场只推1次
-        if 25.0 <= mins_left <= 95.0:
+        # 容错 GitHub 免费队列延迟，放宽到 15~115 分钟（靠 push_key 保证每场严格只推 1 次）
+        if 15.0 <= mins_left <= 115.0:
             due.append(r)
 
     if not due:
@@ -220,19 +222,19 @@ def run_daily_review(force: bool = False) -> Dict[str, Any]:
 
 
 def run_auto() -> Dict[str, Any]:
-    """根据北京时间自动分发任务（供统一 cron 使用）"""
+    """根据北京时间自动分发任务（放宽容错窗口，就算 GitHub 免费队列延迟 1~2 小时也绝不漏发！）"""
     now_bjt = datetime.now(BJT)
     h = now_bjt.hour
     results: Dict[str, Any] = {"bjt_time": now_bjt.strftime("%Y-%m-%d %H:%M")}
 
-    if 8 <= h <= 10:
+    if 8 <= h <= 11:
         results["daily_review"] = run_daily_review()
-    if 11 <= h <= 13:
+    if 11 <= h <= 14:
         results["daily_noon"] = run_daily_brief("1200", "12:00 午间初判简报")
-    if 19 <= h <= 21:
+    if 19 <= h <= 22:
         results["daily_evening"] = run_daily_brief("2000", "20:00 晚间盘口更新简报")
 
-    # 任何唤醒时段都顺带检查一次赛前 1 小时窗口
+    # 任何唤醒时段都顺带检查一次赛前约 1 小时窗口
     results["prematch_1h"] = run_prematch_1h()
     return results
 
