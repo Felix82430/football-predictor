@@ -30,7 +30,7 @@ from database import (
     upsert_match,
 )
 from engine.backtest import run_rolling_backtest
-from engine.predictor import ENGINE_CACHE, predict_match
+from engine.predictor import ENGINE_CACHE, compute_confidence_score, predict_match
 from engine.review_engine import review_finished_matches, summarize_review_performance
 from engine.scheduler import SCHEDULER
 from notify.feishu_bot import (
@@ -175,7 +175,12 @@ def sync_all_leagues(days_back: int = 3, days_ahead: int = 7) -> Dict[str, Any]:
 
 
 @app.get("/api/matches")
-def api_list_matches(league: str = "ALL", status: str = "ALL", limit: int = 80) -> Dict[str, Any]:
+def api_list_matches(
+    league: str = "ALL",
+    status: str = "ALL",
+    sort: str = "confidence",
+    limit: int = 80,
+) -> Dict[str, Any]:
     rows = list_matches_with_predictions(league_code=league, status=status, limit=limit)
     for r in rows:
         if r.get("top3_scores_json"):
@@ -185,6 +190,21 @@ def api_list_matches(league: str = "ALL", status: str = "ALL", limit: int = 80) 
                 r["top3_scores"] = []
         else:
             r["top3_scores"] = []
+
+        if r.get("prediction_id"):
+            pred = get_latest_prediction(r["match_id"])
+            r["confidence"] = compute_confidence_score(pred) if pred else None
+        else:
+            r["confidence"] = None
+
+    if sort == "confidence":
+        rows.sort(
+            key=lambda x: (
+                1 if x.get("confidence") else 0,
+                (x.get("confidence") or {}).get("score", -1),
+            ),
+            reverse=True,
+        )
     return {"items": rows}
 
 

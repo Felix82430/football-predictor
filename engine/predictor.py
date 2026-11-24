@@ -274,6 +274,91 @@ def clamp_intel_items(raw_items: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
     return cleaned, total_h, total_a
 
 
+def compute_confidence_score(pred: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    计算单场综合把握度评分（0~100分）与推荐星级，用于每日比赛从高到低智能排序。
+    公式完全透明，便于赛后复盘检验与持续优化：
+    1. 胜率与领先优势（最高45分）：主推方向概率越高、领先次优方向差距越大，分越高
+    2. 市场红绿灯共振（最高30分，红灯额外扣10分）：绿灯共振加满分，红灯强行压到榜尾防踩雷
+    3. 数据与情报完整度（最高15分）：有赔率对照、盘口平稳、有情报核查加分
+    4. 预期进球净优势（最高10分）：预期进球差越明显，低比分偶然翻车概率越低
+    """
+    probs = sorted(
+        [
+            float(pred.get("final_prob_home") or 0.0),
+            float(pred.get("final_prob_draw") or 0.0),
+            float(pred.get("final_prob_away") or 0.0),
+        ],
+        reverse=True,
+    )
+    top_p, second_p = probs[0], probs[1]
+    margin = max(0.0, top_p - second_p)
+
+    # 1. 胜率与领先优势（0~45分）
+    prob_part = min(28.0, max(0.0, (top_p - 0.33) / 0.42 * 28.0))
+    margin_part = min(17.0, max(0.0, margin / 0.40 * 17.0))
+    s_prob = round(prob_part + margin_part, 1)
+
+    # 2. 市场红绿灯共振（-10 ~ +30分）
+    light = pred.get("traffic_light") or "YELLOW"
+    has_intel = abs(float(pred.get("home_intel_delta") or 0.0)) >= 0.03 or abs(
+        float(pred.get("away_intel_delta") or 0.0)
+    ) >= 0.03
+    if light == "GREEN":
+        s_market = 30.0
+        mkt_reason = "与市场赔率高度共振(绿灯)"
+    elif light == "YELLOW":
+        s_market = 16.0 if has_intel else 12.0
+        mkt_reason = "与市场轻度分歧(黄灯)"
+    else:
+        s_market = -10.0
+        mkt_reason = "与市场分歧过大或异常变盘(红灯降权)"
+
+    # 3. 数据与情报完整度（0~15分）
+    s_data = 0.0
+    if pred.get("market_prob_home") is not None:
+        s_data += 8.0
+    odds_note = pred.get("odds_trend_note") or ""
+    if "异常变盘" not in odds_note and "暂无公开赔率" not in odds_note:
+        s_data += 4.0
+    if has_intel or pred.get("stage") == "FINAL":
+        s_data += 3.0
+
+    # 4. 预期进球净优势（0~10分）
+    xg_diff = abs(float(pred.get("final_home_xg") or 0.0) - float(pred.get("final_away_xg") or 0.0))
+    s_xg = round(min(10.0, xg_diff / 1.4 * 10.0), 1)
+
+    total = round(max(5.0, min(99.0, s_prob + s_market + s_data + s_xg)), 1)
+
+    if total >= 80:
+        stars, tier = "⭐⭐⭐⭐⭐", "极高把握·核心重点"
+    elif total >= 68:
+        stars, tier = "⭐⭐⭐⭐", "较高把握·稳健推荐"
+    elif total >= 55:
+        stars, tier = "⭐⭐⭐", "中等把握·理性参考"
+    elif total >= 40:
+        stars, tier = "⭐⭐", "把握偏低·建议观望"
+    else:
+        stars, tier = "⭐", "高危红灯·建议避坑"
+
+    reason = (
+        f"胜率优势 {s_prob:.0f}/45 + 市场共振 {s_market:+.0f}/30 + "
+        f"数据完整 {s_data:.0f}/15 + xG差 {s_xg:.0f}/10（{mkt_reason}）"
+    )
+    return {
+        "score": total,
+        "stars": stars,
+        "tier": tier,
+        "reason": reason,
+        "breakdown": {
+            "prob_score": s_prob,
+            "market_score": s_market,
+            "data_score": s_data,
+            "xg_score": s_xg,
+        },
+    }
+
+
 def predict_match(
     match: Dict[str, Any],
     ai_intel_items: Optional[List[Dict[str, Any]]] = None,

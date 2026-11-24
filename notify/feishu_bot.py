@@ -69,14 +69,43 @@ def send_feishu_card(
 
 
 def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每日焦点初判简报") -> Dict[str, Any]:
-    """构建多场次汇总交互卡片（手机端清爽速览）"""
+    """构建多场次汇总交互卡片（按综合把握度评分从高到低排序，手机端一眼看懂主攻与避坑）"""
+    from engine.predictor import compute_confidence_score
+
     elements: List[Dict[str, Any]] = []
     light_icon = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}
     out_label = {"H": "主胜", "D": "平局", "A": "客胜"}
 
-    for idx, entry in enumerate(items[:10]):
+    # 计算每场把握度分并按从高到低排序
+    enriched = []
+    for entry in items:
+        conf = compute_confidence_score(entry["prediction"])
+        enriched.append({**entry, "conf": conf})
+    enriched.sort(key=lambda x: x["conf"]["score"], reverse=True)
+
+    # 顶部增加推荐排序总览速查
+    top_names = [
+        f"第{i+1}稳：{e['match']['home_team_cn']} vs {e['match']['away_team_cn']}（{e['conf']['score']:.0f}分）"
+        for i, e in enumerate(enriched[:3])
+    ]
+    elements.append(
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": (
+                    "🏆 **本轮把握度排序：从高到低（红灯高危场次已自动压至榜尾）**\n"
+                    + " · ".join(top_names)
+                ),
+            },
+        }
+    )
+    elements.append({"tag": "hr"})
+
+    for idx, entry in enumerate(enriched[:12]):
         m = entry["match"]
         p = entry["prediction"]
+        conf = entry["conf"]
         top3 = json.loads(p.get("top3_scores_json") or "[]")
         top3_str = " / ".join(f"{x['score']}({x['prob']*100:.0f}%)" for x in top3)
         icon = light_icon.get(p.get("traffic_light", "GREEN"), "🟢")
@@ -84,13 +113,15 @@ def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每
         lock_tag = "🔒已锁盘" if p.get("is_locked") else "初判"
 
         md = (
-            f"**{idx+1}. [{m['league_name']}] {m['home_team_cn']} vs {m['away_team_cn']}**  `{m['kickoff_bjt']}`  {icon} {lock_tag}\n"
-            f"• **概率**：主胜 `{p['final_prob_home']*100:.1f}%` | 平 `{p['final_prob_draw']*100:.1f}%` | 客胜 `{p['final_prob_away']*100:.1f}%`  →  **主推：{rec}**\n"
-            f"• **Top 3 比分**：{top3_str}（预期进球 `{p['final_home_xg']:.2f}:{p['final_away_xg']:.2f}`）\n"
-            f"• **动态修正**：主 `{p['home_intel_delta']*100:+.1f}%` / 客 `{p['away_intel_delta']*100:+.1f}%` | {p.get('traffic_note', '')}"
+            f"**No.{idx+1}  {conf['stars']} 把握度 {conf['score']:.0f}分（{conf['tier']}）**\n"
+            f"**[{m['league_name']}] {m['home_team_cn']} vs {m['away_team_cn']}**  {m['kickoff_bjt']}  {icon} {lock_tag}\n"
+            f"• 概率：主胜 **{p['final_prob_home']*100:.1f}%** | 平 **{p['final_prob_draw']*100:.1f}%** | 客胜 **{p['final_prob_away']*100:.1f}%**  →  **主推：{rec}**\n"
+            f"• Top 3 比分：{top3_str}（预期进球 {p['final_home_xg']:.2f} : {p['final_away_xg']:.2f}）\n"
+            f"• 排序依据：{conf['reason']}\n"
+            f"• 盘口体检：{p.get('traffic_note', '')}"
         )
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": md}})
-        if idx < len(items[:10]) - 1:
+        if idx < len(enriched[:12]) - 1:
             elements.append({"tag": "hr"})
 
     elements.append(
@@ -99,7 +130,7 @@ def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每
             "elements": [
                 {
                     "tag": "plain_text",
-                    "content": "提示：开赛前1小时可在电脑端/对话中触发【二段临场终审】核对官方首发与最终盘口。理性娱乐，切勿盲从。",
+                    "content": "图例：🟢绿灯=模型与机构高度一致(优先参考) | 🟡黄灯=存在分歧(等赛前1小时首发) | 🔴红灯=分歧过大或异常变盘(高危慎碰)",
                 }
             ],
         }
@@ -128,7 +159,7 @@ def build_single_final_card(match: Dict[str, Any], pred: Dict[str, Any]) -> Dict
     intel_lines = []
     for it in intel_items:
         intel_lines.append(
-            f"- **{it.get('label')}**（主`{it.get('home_delta',0)*100:+.1f}%` / 客`{it.get('away_delta',0)*100:+.1f}%`）：{it.get('reason')}"
+            f"- **{it.get('label')}**（主 {it.get('home_delta',0)*100:+.1f}% / 客 {it.get('away_delta',0)*100:+.1f}%）：{it.get('reason')}"
         )
     intel_md = "\n".join(intel_lines) if intel_lines else "- 未触发额外动态加减分（纯数理底盘）"
 
@@ -136,10 +167,10 @@ def build_single_final_card(match: Dict[str, Any], pred: Dict[str, Any]) -> Dict
         f"**赛事**：[{match['league_name']}] {match['home_team_cn']} vs {match['away_team_cn']}\n"
         f"**开球（北京时间）**：{match['kickoff_bjt']} | **阶段**：{'临场终审 🔒' if pred.get('stage')=='FINAL' else '赛前初判'}\n\n"
         f"**📊 最终胜平负概率**\n"
-        f"主胜 `{pred['final_prob_home']*100:.1f}%` | 平局 `{pred['final_prob_draw']*100:.1f}%` | 客胜 `{pred['final_prob_away']*100:.1f}%`\n"
+        f"主胜 **{pred['final_prob_home']*100:.1f}%** | 平局 **{pred['final_prob_draw']*100:.1f}%** | 客胜 **{pred['final_prob_away']*100:.1f}%**\n"
         f"**🎯 主推方向**：**{out_zh}**\n"
         f"**🔢 Top 3 比分**：" + " / ".join(f"**{x['score']}**({x['prob']*100:.1f}%)" for x in top3) + "\n"
-        f"**⚽ 预期进球**：`{pred['final_home_xg']:.2f} : {pred['final_away_xg']:.2f}`（大2.5球 `{pred.get('over_25_prob',0)*100:.1f}%`）\n\n"
+        f"**⚽ 预期进球**：{pred['final_home_xg']:.2f} : {pred['final_away_xg']:.2f}（大2.5球 {pred.get('over_25_prob',0)*100:.1f}%）\n\n"
         f"**🧾 情报加减分明细账**\n{intel_md}\n\n"
         f"**📈 盘口与红绿灯体检**\n{pred.get('odds_trend_note','')}\n{pred.get('traffic_note','')}"
     )
@@ -160,10 +191,10 @@ def build_single_final_card(match: Dict[str, Any], pred: Dict[str, Any]) -> Dict
 def build_review_report_card(summary: Dict[str, Any], reviews: List[Dict[str, Any]]) -> Dict[str, Any]:
     """构建《每日赛后核对与复盘报告》飞书卡片"""
     header_md = (
-        f"**累计核对场次**：`{summary['total']}` 场\n"
-        f"**胜平负命中率**：`{summary['outcome_acc']*100:.1f}%`（{summary['outcome_hits']}/{summary['total']}）\n"
-        f"**Top 3 比分命中**：`{summary['top3_acc']*100:.1f}%`（{summary['top3_hits']}/{summary['total']}，首选精准 `{summary['exact_top1_hits']}` 场）\n"
-        f"**误差归因分布**：偶然红牌/运气 `{summary['luck_misses']}` 场 | 模型/情报待调优 `{summary['model_misses']}` 场 | 红黄灯避坑 `{summary['upset_saves']}` 次"
+        f"**累计核对场次**：**{summary['total']}** 场\n"
+        f"**胜平负命中率**：**{summary['outcome_acc']*100:.1f}%**（{summary['outcome_hits']}/{summary['total']}）\n"
+        f"**Top 3 比分命中**：**{summary['top3_acc']*100:.1f}%**（{summary['top3_hits']}/{summary['total']}，首选精准 {summary['exact_top1_hits']} 场）\n"
+        f"**误差归因分布**：偶然红牌/运气 {summary['luck_misses']} 场 | 模型/情报待调优 {summary['model_misses']} 场 | 红黄灯避坑 {summary['upset_saves']} 次"
     )
 
     elements: List[Dict[str, Any]] = [
