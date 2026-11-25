@@ -65,13 +65,14 @@ jobs:
             FORCE_FLAG="--force"
           fi
           python cloud_runner.py --task "$TASK" $FORCE_FLAG
+          python export_site.py
 
-      - name: 自动保存最新盘口快照、锁单记录与复盘台账到仓库
+      - name: 自动保存最新盘口快照、复盘台账并刷新手机网页
         run: |
           git config user.name "football-predictor-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add data/football_predictor.db
+          git add data/football_predictor.db docs/
           if ! git diff --cached --quiet; then
-            git commit -m "chore: 自动更新赛程盘口快照与复盘记录 [skip ci]"
+            git commit -m "chore: 自动更新赛程盘口、复盘与手机云端网页 [skip ci]"
             git push
           fi

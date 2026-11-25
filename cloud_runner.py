@@ -234,9 +234,32 @@ def run_auto() -> Dict[str, Any]:
     if 19 <= h <= 22:
         results["daily_evening"] = run_daily_brief("2000", "20:00 晚间盘口更新简报")
 
-    # 任何唤醒时段都顺带检查一次赛前约 1 小时窗口
+    # 任何唤醒时段都顺带检查一次赛前约 1 小时窗口，并确保未来 48 小时赛程在手机网页上均已出预测
     results["prematch_1h"] = run_prematch_1h()
+    ensure_upcoming_predicted_for_web()
     return results
+
+
+def ensure_upcoming_predicted_for_web(limit: int = 20) -> int:
+    """确保未来 48 小时内的所有未开赛五大联赛/欧冠在手机云端网页里都有最新预测，不等定时通知也能看"""
+    now_utc = datetime.now(timezone.utc)
+    rows = list_matches_with_predictions(status="SCHEDULED", limit=limit)
+    missing = []
+    for r in rows:
+        if r.get("prediction_id"):
+            continue
+        try:
+            kdt = datetime.fromisoformat(r["kickoff_utc"].replace("Z", "+00:00"))
+            if 0.0 <= (kdt - now_utc).total_seconds() / 3600.0 <= 60.0:
+                missing.append(r)
+        except Exception:
+            continue
+    if not missing:
+        return 0
+    ENGINE_CACHE.ensure_loaded()
+    for r in missing:
+        predict_match(r, ai_intel_items=None, stage="PREMATCH", lock=False, fetch_live_summary=True)
+    return len(missing)
 
 
 def main() -> None:

@@ -170,7 +170,7 @@ def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每
             "elements": [
                 {
                     "tag": "plain_text",
-                    "content": "图例：🟢绿灯=模型与机构高度一致(优先参考) | 🟡黄灯=存在分歧(等赛前1小时首发) | 🔴红灯=分歧过大或异常变盘(高危慎碰)",
+                    "content": "手机随时直看全站与5×5热力图：https://felix82430.github.io/football-predictor/ | 🟢稳健共振 🟡分歧看首发 🔴高危慎碰",
                 }
             ],
         }
