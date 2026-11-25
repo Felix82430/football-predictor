@@ -192,6 +192,14 @@ def init_db() -> None:
         )
         _ensure_columns(
             conn,
+            "odds_snapshots",
+            {
+                "over_odds": "REAL",
+                "under_odds": "REAL",
+            },
+        )
+        _ensure_columns(
+            conn,
             "post_match_reviews",
             {
                 "confidence_score": "REAL DEFAULT 50.0",
@@ -282,6 +290,8 @@ def insert_odds_snapshot(
     away_odds: Optional[float],
     asian_handicap: Optional[str] = None,
     over_under_line: Optional[float] = None,
+    over_odds: Optional[float] = None,
+    under_odds: Optional[float] = None,
 ) -> Optional[int]:
     if not (home_odds and draw_odds and away_odds):
         return None
@@ -296,7 +306,7 @@ def insert_odds_snapshot(
         # 避免短时间内重复存入完全相同的赔率快照
         last = conn.execute(
             """
-            SELECT home_odds, draw_odds, away_odds, asian_handicap
+            SELECT home_odds, draw_odds, away_odds, asian_handicap, over_odds, under_odds
             FROM odds_snapshots
             WHERE match_id = ?
             ORDER BY id DESC LIMIT 1
@@ -309,6 +319,8 @@ def insert_odds_snapshot(
             and last["draw_odds"] == draw_odds
             and last["away_odds"] == away_odds
             and (last["asian_handicap"] or "") == (asian_handicap or "")
+            and last["over_odds"] == over_odds
+            and last["under_odds"] == under_odds
         ):
             return None
 
@@ -317,9 +329,9 @@ def insert_odds_snapshot(
             INSERT INTO odds_snapshots (
                 match_id, captured_at, source,
                 home_odds, draw_odds, away_odds,
-                asian_handicap, over_under_line,
+                asian_handicap, over_under_line, over_odds, under_odds,
                 home_implied, draw_implied, away_implied
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 match_id,
@@ -330,6 +342,8 @@ def insert_odds_snapshot(
                 away_odds,
                 asian_handicap,
                 over_under_line,
+                over_odds,
+                under_odds,
                 h_imp,
                 d_imp,
                 a_imp,

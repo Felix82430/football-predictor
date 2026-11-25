@@ -139,13 +139,13 @@
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-l">近期焦点赛程</div><div class="kpi-v" id="kUp">-</div><div class="kpi-s" id="kSnap">盘口快照 -</div></div>
       <div class="kpi"><div class="kpi-l">实盘赛后命中率</div><div class="kpi-v" id="kRevAcc">-</div><div class="kpi-s" id="kRevSub">待核对</div></div>
-      <div class="kpi"><div class="kpi-l">高把握(≥68分)命中</div><div class="kpi-v" id="kHighAcc" style="color:#4ade80;">-</div><div class="kpi-s" id="kClv">平均CLV -</div></div>
-      <div class="kpi"><div class="kpi-l">45天无作弊回测</div><div class="kpi-v" id="kBt">-</div><div class="kpi-s" id="kBtSub">五大联赛基准</div></div>
+      <div class="kpi"><div class="kpi-l">高把握(≥68分)猜中</div><div class="kpi-v" id="kHighAcc" style="color:#4ade80;">-</div><div class="kpi-s" id="kClv">防冷双选 -</div></div>
+      <div class="kpi"><div class="kpi-l">45天历史无作弊验准</div><div class="kpi-v" id="kBt">-</div><div class="kpi-s" id="kBtSub">五大联赛真实统计</div></div>
     </div>
 
     <!-- Tab 1: 赛程预测 -->
     <div id="tab-matches" class="section active">
-      <div class="legend">🟢绿灯=模型与机构高度一致(优先参考) &nbsp;|&nbsp; 🟡黄灯=存在分歧(看临场首发) &nbsp;|&nbsp; 🔴红灯=分歧大或异常变盘(高危慎碰)</div>
+      <div class="legend">🟢绿灯=模型和全球赔率看法一致(最稳优先看) &nbsp;|&nbsp; 🟡黄灯=看法有分歧(建议防平或等赛前1小时看首发) &nbsp;|&nbsp; 🔴红灯=突然变盘或分歧太大(容易爆冷慎碰)</div>
       <div class="scroll-row" id="lgChips">
         <span class="chip active" onclick="setLg('ALL', this)">全部</span>
         <span class="chip" onclick="setLg('UCL', this)">欧冠</span>
@@ -227,10 +227,10 @@
       const rs = DATA.reviews.summary;
       if (rs && rs.total > 0) {
         document.getElementById('kRevAcc').textContent = (rs.outcome_acc * 100).toFixed(1) + '%';
-        document.getElementById('kRevSub').textContent = `${rs.outcome_hits}/${rs.total}场 · Top3中${rs.top3_hits}场`;
+        document.getElementById('kRevSub').textContent = `${rs.outcome_hits}/${rs.total}场 · 候选比分中${rs.top3_hits}场`;
         const hi = (rs.tier_stats || {})['高把握(≥68分)'];
         document.getElementById('kHighAcc').textContent = hi ? `${(hi.acc*100).toFixed(0)}% (${hi.hits}/${hi.total})` : '-';
-        document.getElementById('kClv').textContent = rs.avg_clv != null ? `平均CLV ${rs.avg_clv>=0?'+':''}${rs.avg_clv}%` : '收盘价值统计中';
+        document.getElementById('kClv').textContent = rs.double_chance_acc != null ? `防冷双选中 ${(rs.double_chance_acc*100).toFixed(0)}%` : '持续统计中';
       }
       if (DATA.backtest) {
         document.getElementById('kBt').textContent = (DATA.backtest.outcome_accuracy * 100).toFixed(1) + '%';
@@ -303,15 +303,16 @@
                 <span>客 ${(p.final_prob_away*100).toFixed(1)}%</span>
               </div>
               <div class="pill-row">
-                <span style="font-size:11px;color:var(--muted);">Top3:</span>
+                <span style="font-size:11px;color:var(--muted);">最可能比分:</span>
                 ${(p.top3_scores||[]).map(x=>`<span class="pill"><strong>${x.score}</strong> ${(x.prob*100).toFixed(0)}%</span>`).join('')}
-                ${bestTg.range ? `<span class="pill">总球 <strong>${bestTg.range}</strong></span>` : ''}
+                ${bestTg.range ? `<span class="pill">总进球 <strong>${bestTg.range}</strong></span>` : ''}
               </div>
               <div class="pill-row">
-                ${dc['1X'] ? `<span class="pill">${p.final_prob_home>=p.final_prob_away ? `主不败 ${(dc['1X']*100).toFixed(0)}%` : `客不败 ${(dc['X2']*100).toFixed(0)}%`}</span>` : ''}
-                <span class="pill">预期进球 ${p.final_home_xg.toFixed(2)}:${p.final_away_xg.toFixed(2)}</span>
-                ${ev ? `<span class="pill" style="border-color:#22c55e;color:#4ade80;">💎 ${ev.label} EV ${ev.ev_pct>=0?'+':''}${ev.ev_pct}%</span>` : ''}
+                ${dc['1X'] ? `<span class="pill">${p.final_prob_home>=p.final_prob_away ? `防冷主不输 ${(dc['1X']*100).toFixed(0)}%` : `防冷客不输 ${(dc['X2']*100).toFixed(0)}%`}</span>` : ''}
+                <span class="pill">预计进球 ${p.final_home_xg.toFixed(2)}:${p.final_away_xg.toFixed(2)}</span>
+                ${ev ? `<span class="pill" style="border-color:#22c55e;color:#4ade80;">💎 ${ev.label}赔率有性价比</span>` : ''}
               </div>
+              ${c && c.play_advice ? `<div style="font-size:11px;color:#e2e8f0;margin-top:4px;">${c.play_advice}</div>` : ''}
             ` : `<div style="font-size:12px;color:var(--muted);">云端将在赛前自动补全三层量化预测与热力图</div>`}
           </div>
         `;
@@ -366,30 +367,30 @@
 
         <div class="box">
           <h4>🎯 综合研判（${p.confidence.stars} 把握度 ${p.confidence.score.toFixed(0)}分 · ${p.confidence.tier}）</h4>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${p.confidence.reason}</div>
+          <div style="font-size:13px;color:#38bdf8;font-weight:700;margin-bottom:6px;">${p.confidence.play_advice || ''}</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">排序理由：${p.confidence.reason}</div>
           <div style="font-size:13px;margin-bottom:6px;">
-            <strong>胜平负：</strong>主胜 ${(p.final_prob_home*100).toFixed(1)}% / 平 ${(p.final_prob_draw*100).toFixed(1)}% / 客胜 ${(p.final_prob_away*100).toFixed(1)}%（主推 <strong>${OUT_ZH[p.recommended_outcome]}</strong>）
+            <strong>胜负概率：</strong>主胜 ${(p.final_prob_home*100).toFixed(1)}% / 平局 ${(p.final_prob_draw*100).toFixed(1)}% / 客胜 ${(p.final_prob_away*100).toFixed(1)}%（看好 <strong>${OUT_ZH[p.recommended_outcome]}</strong>）
           </div>
           <div style="font-size:12px;color:var(--accent);">${p.traffic_note || ''}</div>
         </div>
 
         <div class="box">
-          <h4>🎫 体彩五大玩法 & EV 价值精算</h4>
+          <h4>🎫 常见体彩玩法概率 & 赔率性价比（看懂再参考）</h4>
           <div class="pill-row">
-            ${dc['1X'] ? `<span class="pill">${m.home_team_cn}不败 <strong>${(dc['1X']*100).toFixed(1)}%</strong></span>
-            <span class="pill">${m.away_team_cn}不败 <strong>${(dc['X2']*100).toFixed(1)}%</strong></span>
-            <span class="pill">分胜负 <strong>${(dc['12']*100).toFixed(1)}%</strong></span>` : ''}
+            ${dc['1X'] ? `<span class="pill">防冷·${m.home_team_cn}不输(胜/平) <strong>${(dc['1X']*100).toFixed(1)}%</strong></span>
+            <span class="pill">防冷·${m.away_team_cn}不输(平/负) <strong>${(dc['X2']*100).toFixed(1)}%</strong></span>` : ''}
           </div>
           <div class="pill-row">
-            ${rm1.win !== undefined ? `<span class="pill">主让-1：胜${(rm1.win*100).toFixed(0)}% / 平${(rm1.draw*100).toFixed(0)}% / 负${(rm1.lose*100).toFixed(0)}%</span>` : ''}
-            ${rp1.win !== undefined ? `<span class="pill">主受让+1：胜${(rp1.win*100).toFixed(0)}% / 平${(rp1.draw*100).toFixed(0)}% / 负${(rp1.lose*100).toFixed(0)}%</span>` : ''}
+            ${rm1.win !== undefined ? `<span class="pill">让球(-1)：主赢2球+ ${(rm1.win*100).toFixed(0)}% / 刚好赢1球 ${(rm1.draw*100).toFixed(0)}% / 主不胜 ${(rm1.lose*100).toFixed(0)}%</span>` : ''}
+            ${rp1.win !== undefined ? `<span class="pill">受让(+1)：主不输 ${(rp1.win*100).toFixed(0)}% / 客刚好赢1球 ${(rp1.draw*100).toFixed(0)}% / 客赢2球+ ${(rp1.lose*100).toFixed(0)}%</span>` : ''}
           </div>
           <div class="pill-row">
-            ${Object.entries(tg).map(([k,v])=>`<span class="pill">${k}球 <strong>${(v*100).toFixed(0)}%</strong></span>`).join('')}
+            ${Object.entries(tg).map(([k,v])=>`<span class="pill">全场共进${k}球 <strong>${(v*100).toFixed(0)}%</strong></span>`).join('')}
           </div>
           <div style="font-size:12px;color:#4ade80;margin:6px 0;">${ev.summary || ''}</div>
           ${hm.length ? `
-            <div style="font-size:12px;color:var(--muted);margin:6px 0 4px;">5×5 比分概率热力图（行=主队进球，列=客队进球）</div>
+            <div style="font-size:12px;color:var(--muted);margin:6px 0 4px;">所有常见比分概率表（越亮越容易踢出，横排=主队进球，竖排=客队进球）</div>
             <table>
               <thead><tr><th></th><th style="text-align:center;">客0</th><th style="text-align:center;">客1</th><th style="text-align:center;">客2</th><th style="text-align:center;">客3</th><th style="text-align:center;">客4</th></tr></thead>
               <tbody>${hm.map((row,i)=>`<tr><th>主${i}</th>${row.map(v=>`<td style="text-align:center;background:rgba(56,189,248,${Math.min(0.85,v*5.5).toFixed(2)});color:#fff;">${(v*100).toFixed(1)}%</td>`).join('')}</tr>`).join('')}</tbody>
@@ -436,12 +437,12 @@
         `<span class="pill">${k}：<strong>${v.hits}/${v.total} (${(v.acc*100).toFixed(1)}%)</strong></span>`
       ).join(' ');
       document.getElementById('revSummary').innerHTML = `
-        累计核对 <strong>${rs.total}</strong> 场 | 胜平负命中 <strong>${rs.outcome_hits}/${rs.total} (${(rs.outcome_acc*100).toFixed(1)}%)</strong> |
-        Top3比分命中 <strong>${rs.top3_hits} 场 (${(rs.top3_acc*100).toFixed(1)}%)</strong>（首选精准 <strong>${rs.exact_top1_hits}</strong> 场）|
-        平均CLV <strong>${rs.avg_clv!=null ? (rs.avg_clv>=0?'+':'')+rs.avg_clv+'%' : '-'}</strong>
+        累计复盘 <strong>${rs.total}</strong> 场 | 胜平负猜中 <strong>${rs.outcome_hits}/${rs.total} (${(rs.outcome_acc*100).toFixed(1)}%)</strong> |
+        防冷双选(不输)猜中 <strong>${rs.double_chance_hits||0}/${rs.total} (${((rs.double_chance_acc||0)*100).toFixed(1)}%)</strong> |
+        3个候选比分猜中 <strong>${rs.top3_hits} 场 (${(rs.top3_acc*100).toFixed(1)}%)</strong>（第1首选直接猜中 <strong>${rs.exact_top1_hits}</strong> 场）
         <div class="pill-row" style="margin-top:8px;">${tiers}</div>
       `;
-      const attrZh = { ACCURATE: '✅ 准确命中', VARIANCE_LUCK: '🎲 偶然运气', MODEL_OR_INTEL_MISS: '❌ 待调优误判' };
+      const attrZh = { ACCURATE: '✅ 准确猜中', VARIANCE_LUCK: '🎲 场面占优但运气差', MODEL_OR_INTEL_MISS: '❌ 模型需改进' };
       document.getElementById('revCards').innerHTML = items.map(r => `
         <div class="box">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">

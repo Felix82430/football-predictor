@@ -179,14 +179,13 @@ def compute_rest_and_fatigue(
 def elo_to_expected_goals(
     home_elo: float,
     away_elo: float,
-    league_avg_goals: float = 2.75,
+    league_avg_goals: float = 2.58,
     home_adv_elo: float = 65.0,
 ) -> tuple[float, float]:
     """当欧冠遇到非五大联赛球队（无完整联赛CSV训练样本）时，通过 ELO 差值平滑映射基准预期进球"""
     diff = (home_elo + home_adv_elo) - away_elo
     exp_share = 1.0 / (1.0 + 10.0 ** (-diff / 400.0))
-    # 将胜率份额映射为合理的攻防进球预期
-    total = league_avg_goals * (1.0 + 0.08 * abs(diff) / 300.0)
-    lam_h = max(0.35, min(3.8, total * (0.18 + 0.64 * exp_share)))
-    lam_a = max(0.25, min(3.5, total * (0.18 + 0.64 * (1.0 - exp_share))))
+    total = league_avg_goals * (1.0 + 0.04 * abs(diff) / 300.0)
+    lam_h = max(0.35, min(3.4, total * (0.18 + 0.64 * exp_share)))
+    lam_a = max(0.25, min(3.1, total * (0.18 + 0.64 * (1.0 - exp_share))))
     return round(lam_h, 3), round(lam_a, 3)

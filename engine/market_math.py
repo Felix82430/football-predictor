@@ -11,6 +11,42 @@ import math
 from typing import Any, Dict, Optional, Tuple
 
 from scipy.optimize import brentq, minimize
+from scipy.stats import poisson
+
+
+def implied_total_goals_from_ou(
+    line: Optional[float],
+    over_odds: Optional[float] = None,
+    under_odds: Optional[float] = None,
+) -> float:
+    """
+    v1.6 核心修复：结合大小球盘口线 + 大/小球双边赔率水位，
+    通过泊松累积分布精确反推市场真实的期望总进球数。
+    彻底解决之前把 overUnder=3.5（即使大球赔率高达2.6）直接当成 3.5 球拉爆预期进球的 Bug！
+    """
+    if not line or not (1.5 <= float(line) <= 5.5):
+        return 2.58
+
+    L = float(line)
+    # 若有双边赔率，先去水求真实大球概率 P(Total > L)
+    if over_odds and under_odds and over_odds > 1.01 and under_odds > 1.01:
+        inv_o, inv_u = 1.0 / over_odds, 1.0 / under_odds
+        p_over = inv_o / (inv_o + inv_u)
+        # 整数/半数盘口换算泊松阈值 k（例如 L=2.5 -> 进>=3球即 k=2；L=3.5 -> 进>=4球即 k=3）
+        k = int(math.floor(L))
+        # 对半数盘口直接使用 Poisson(Total > k) = 1 - cdf(k, lam) = p_over
+        try:
+            def f(lam: float) -> float:
+                return (1.0 - float(poisson.cdf(k, lam))) - p_over
+
+            lam_star = brentq(f, 0.8, 6.0, xtol=1e-4)
+            # 合理温和限幅，防止极端大球线偏离现实
+            return round(max(1.75, min(3.75, lam_star)), 3)
+        except Exception:
+            pass
+
+    # 若暂缺双边水位，对偏高盘口线做保守回归（避免 3.5 线被直接当成 3.5 球）
+    return round(max(1.85, min(3.25, 0.45 * L + 0.55 * 2.58)), 3)
 
 
 def power_devig(home_odds: float, draw_odds: float, away_odds: float) -> Tuple[float, float, float]:
@@ -84,13 +120,13 @@ def compute_ev_and_kelly(
 
     if best_value:
         note = (
-            f"💎 发现正期望价值选项：{best_value['label']}（欧赔 {best_value['odds']}，"
-            f"EV {best_value['ev_pct']:+.1f}%，1/4凯利理性参考比例 ≤ {best_value['kelly_pct']}%）"
+            f"💎 发现高性价比选项：{best_value['label']}（参考赔率 {best_value['odds']}，"
+            f"相比胜率赔率偏高 {best_value['ev_pct']:+.1f}%，如娱乐建议轻仓 ≤ {best_value['kelly_pct']}%）"
         )
     elif any(x["odds"] is not None for x in items):
-        note = "当前市场赔率已充分定价（三项 EV 均 < +3%），属于合理无明显溢价盘口。"
+        note = "当前各选项赔率定价比较合理，没有明显捡漏空间，按胜率与防冷思路参考即可。"
     else:
-        note = "暂无机构欧赔，暂无法测算 EV 价值。"
+        note = "暂无公开赔率数据，仅按两队硬实力与近况分析。"
 
     return {
         "items": items,
@@ -102,10 +138,11 @@ def compute_ev_and_kelly(
 def invert_market_to_expected_goals(
     mkt_probs: Tuple[float, float, float],
     over_under_line: Optional[float] = None,
+    over_odds: Optional[float] = None,
+    under_odds: Optional[float] = None,
 ) -> Optional[Tuple[float, float]]:
     """
-    由市场去水后的胜平负概率 + 大小球盘口线，反推出市场隐含的主客队预期进球 (lam_h, lam_a)。
-    专门用于欧冠遇到非五大联赛/冷门联赛球队（无历史数据样本）时的贝叶斯锚定，彻底解决克隆人默认 1580 问题！
+    由市场去水后的胜平负概率 + 结合水位的真实总进球期望，反推出主客队预期进球 (lam_h, lam_a)。
     """
     from engine.dixon_coles import build_score_matrix
 
@@ -113,7 +150,7 @@ def invert_market_to_expected_goals(
     if mh <= 0 or ma <= 0:
         return None
 
-    target_total = float(over_under_line) if (over_under_line and 1.5 <= float(over_under_line) <= 4.5) else 2.65
+    target_total = implied_total_goals_from_ou(over_under_line, over_odds, under_odds)
 
     def loss(x):
         lh = math.exp(x[0])

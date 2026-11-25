@@ -74,6 +74,11 @@ def _parse_espn_odds(comp: Dict[str, Any]) -> Dict[str, Any]:
     open_draw = _american_to_decimal((ml.get("draw") or {}).get("open", {}).get("odds"))
     open_away = _american_to_decimal((ml.get("away") or {}).get("open", {}).get("odds"))
 
+    # 同步读取大小球双边水位（v1.6 修复：结合大/小球赔率反推真实总进球期望，不再直接盲信盘口线）
+    total_node = first.get("total") or {}
+    over_odds = _american_to_decimal((total_node.get("over") or {}).get("close", {}).get("odds"))
+    under_odds = _american_to_decimal((total_node.get("under") or {}).get("close", {}).get("odds"))
+
     return {
         "source": provider,
         "home_odds": home_odds,
@@ -84,6 +89,8 @@ def _parse_espn_odds(comp: Dict[str, Any]) -> Dict[str, Any]:
         "open_away_odds": open_away,
         "asian_handicap": first.get("details") or "",
         "over_under_line": first.get("overUnder"),
+        "over_odds": over_odds,
+        "under_odds": under_odds,
     }
 
 

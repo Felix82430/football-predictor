@@ -68,6 +68,8 @@ def cmd_sync(args: argparse.Namespace) -> None:
                     away_odds=odds["away_odds"],
                     asian_handicap=odds.get("asian_handicap"),
                     over_under_line=odds.get("over_under_line"),
+                    over_odds=odds.get("over_odds"),
+                    under_odds=odds.get("under_odds"),
                 ):
                     snaps += 1
     print(json.dumps({"ok": True, "synced_matches": total, "new_odds_snapshots": snaps, "per_league": per_league}, ensure_ascii=False, indent=2))

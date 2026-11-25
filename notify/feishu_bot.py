@@ -118,25 +118,27 @@ def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每
         ni = json.loads(p.get("news_injuries_json") or "{}")
 
         extra_lines = []
+        if conf.get("play_advice"):
+            extra_lines.append(f"• 实战思路：{conf['play_advice']}")
+
         if lot:
             dc = lot.get("double_chance") or {}
             rq_m1 = lot.get("handicap_minus1") or {}
             rq_p1 = lot.get("handicap_plus1") or {}
             tg_best = lot.get("best_total_goals_range") or {}
-            # 强主队看主让-1，强客队看主受让+1
             if p["final_prob_home"] >= p["final_prob_away"]:
-                rq_txt = f"主让-1：胜{rq_m1.get('win',0)*100:.0f}%/平{rq_m1.get('draw',0)*100:.0f}%/负{rq_m1.get('lose',0)*100:.0f}%"
-                dc_txt = f"双选主不败 {dc.get('1X',0)*100:.0f}%"
+                rq_txt = f"主赢2球及以上 {rq_m1.get('win',0)*100:.0f}% / 刚好赢1球 {rq_m1.get('draw',0)*100:.0f}%"
+                dc_txt = f"稳妥防冷(主不输) {dc.get('1X',0)*100:.0f}%"
             else:
-                rq_txt = f"主受让+1：胜{rq_p1.get('win',0)*100:.0f}%/平{rq_p1.get('draw',0)*100:.0f}%/负{rq_p1.get('lose',0)*100:.0f}%"
-                dc_txt = f"双选客不败 {dc.get('X2',0)*100:.0f}%"
-            tg_txt = f"总进球首选 {tg_best.get('range','')}({tg_best.get('prob',0)*100:.0f}%)" if tg_best else ""
-            extra_lines.append(f"• 体彩玩法：{dc_txt} | {rq_txt} | {tg_txt}")
+                rq_txt = f"客赢2球及以上 {rq_p1.get('lose',0)*100:.0f}% / 刚好赢1球 {rq_p1.get('draw',0)*100:.0f}%"
+                dc_txt = f"稳妥防冷(客不输) {dc.get('X2',0)*100:.0f}%"
+            tg_txt = f"总进球最可能 {tg_best.get('range','')}({tg_best.get('prob',0)*100:.0f}%)" if tg_best else ""
+            extra_lines.append(f"• 常见玩法：{dc_txt} | {rq_txt} | {tg_txt}")
 
         best_val = ev_info.get("best_value")
         if best_val:
             extra_lines.append(
-                f"• 💎 价值提示：{best_val['label']} 赔率 {best_val['odds']}（EV {best_val['ev_pct']:+.1f}%，理性仓位上限 ≤{best_val['kelly_pct']}%）"
+                f"• 💎 性价比提醒：{best_val['label']} 赔率 {best_val['odds']} 偏高（性价比 +{best_val['ev_pct']:.1f}%，娱乐轻仓即可）"
             )
 
         l5 = ni.get("last_five") or {}
@@ -145,20 +147,20 @@ def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每
         if l5.get("home") or l5.get("away"):
             info_bits.append(f"近5场：主[{l5.get('home') or '-'}] / 客[{l5.get('away') or '-'}]")
         if injs:
-            info_bits.append("伤停：" + "、".join(injs[:4]))
+            info_bits.append("伤停名单：" + "、".join(injs[:4]))
         if info_bits:
-            extra_lines.append("• 情报速览：" + " | ".join(info_bits))
+            extra_lines.append("• 赛前速览：" + " | ".join(info_bits))
 
         extra_md = ("\n" + "\n".join(extra_lines)) if extra_lines else ""
 
         md = (
             f"**No.{idx+1}  {conf['stars']} 把握度 {conf['score']:.0f}分（{conf['tier']}）**\n"
             f"**[{m['league_name']}] {m['home_team_cn']} vs {m['away_team_cn']}**  {m['kickoff_bjt']}  {icon} {lock_tag}\n"
-            f"• 概率：主胜 **{p['final_prob_home']*100:.1f}%** | 平 **{p['final_prob_draw']*100:.1f}%** | 客胜 **{p['final_prob_away']*100:.1f}%**  →  **主推：{rec}**\n"
-            f"• Top 3 比分：{top3_str}（预期进球 {p['final_home_xg']:.2f} : {p['final_away_xg']:.2f}）"
+            f"• 胜负概率：主胜 **{p['final_prob_home']*100:.1f}%** | 平局 **{p['final_prob_draw']*100:.1f}%** | 客胜 **{p['final_prob_away']*100:.1f}%**  →  **看好：{rec}**\n"
+            f"• 最可能3个比分：{top3_str}（预计进球 {p['final_home_xg']:.2f} : {p['final_away_xg']:.2f}）"
             f"{extra_md}\n"
-            f"• 排序依据：{conf['reason']}\n"
-            f"• 盘口体检：{p.get('traffic_note', '')}"
+            f"• 为什么排第{idx+1}：{conf['reason']}\n"
+            f"• 赔率体检：{p.get('traffic_note', '')}"
         )
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": md}})
         if idx < len(enriched[:12]) - 1:
@@ -233,15 +235,29 @@ def build_review_report_card(summary: Dict[str, Any], reviews: List[Dict[str, An
     tier_lines = []
     for k, v in (summary.get("tier_stats") or {}).items():
         tier_lines.append(f"{k}：{v['hits']}/{v['total']}（{v['acc']*100:.1f}%）")
-    tier_md = ("\n**按把握度分层命中**：" + " | ".join(tier_lines)) if tier_lines else ""
-    clv_md = f" | **平均CLV收盘价值**：{summary['avg_clv']:+.2f}%" if summary.get("avg_clv") is not None else ""
+    tier_md = ("\n**按把握度分层表现**：" + " | ".join(tier_lines)) if tier_lines else ""
+    dc_md = (
+        f" | **稳妥防冷(不输)命中**：**{summary['double_chance_hits']}/{summary['total']}（{summary['double_chance_acc']*100:.1f}%）**"
+        if summary.get("double_chance_acc") is not None
+        else ""
+    )
+    gr_md = (
+        f" | **🟢绿灯胜平负**：**{summary['green_hits']}/{summary['green_total']}（{summary['green_acc']*100:.1f}%）**"
+        if summary.get("green_acc") is not None
+        else ""
+    )
+    clv_md = (
+        f"\n**提前看准赔率走势**：{'跑赢临场赔率 ' if summary['avg_clv']>=0 else '略逊临场 '}{summary['avg_clv']:+.2f}%"
+        if summary.get("avg_clv") is not None
+        else ""
+    )
 
     header_md = (
-        f"**累计核对场次**：**{summary['total']}** 场{clv_md}\n"
-        f"**胜平负命中率**：**{summary['outcome_acc']*100:.1f}%**（{summary['outcome_hits']}/{summary['total']}）\n"
-        f"**Top 3 比分命中**：**{summary['top3_acc']*100:.1f}%**（{summary['top3_hits']}/{summary['total']}，首选精准 {summary['exact_top1_hits']} 场）\n"
-        f"**误差归因分布**：偶然红牌/运气 {summary['luck_misses']} 场 | 模型/情报待调优 {summary['model_misses']} 场 | 红黄灯避坑 {summary['upset_saves']} 次"
-        f"{tier_md}"
+        f"**累计复盘场次**：**{summary['total']}** 场{gr_md}\n"
+        f"**胜平负猜中率**：**{summary['outcome_acc']*100:.1f}%**（{summary['outcome_hits']}/{summary['total']}）{dc_md}\n"
+        f"**3个候选比分猜中**：**{summary['top3_acc']*100:.1f}%**（{summary['top3_hits']}/{summary['total']}，第1首选直接猜中 {summary['exact_top1_hits']} 场）\n"
+        f"**没猜中的原因拆解**：场面占优但运气差/红牌 {summary['luck_misses']} 场 | 模型需改进 {summary['model_misses']} 场 | 黄红灯提前避雷 {summary['upset_saves']} 次"
+        f"{tier_md}{clv_md}"
     )
 
     elements: List[Dict[str, Any]] = [

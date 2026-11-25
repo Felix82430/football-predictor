@@ -37,6 +37,75 @@ from engine.elo_rating import compute_elo_ratings, compute_rest_and_fatigue, elo
 from engine.market_math import compute_ev_and_kelly, invert_market_to_expected_goals
 
 MANUAL_INTEL_PATH = DATA_DIR / "manual_intel.json"
+LAST_STARTERS_PATH = DATA_DIR / "last_starters.json"
+
+
+def _load_last_starters() -> Dict[str, List[str]]:
+    if not LAST_STARTERS_PATH.exists():
+        return {}
+    try:
+        return json.loads(LAST_STARTERS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_last_starters(data: Dict[str, List[str]]) -> None:
+    LAST_STARTERS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def detect_lineup_rotation(
+    home_team: str,
+    away_team: str,
+    home_cn: str,
+    away_cn: str,
+    current_starters: Dict[str, List[str]],
+) -> Optional[Dict[str, Any]]:
+    """
+    v1.6 0成本临场首发轮换自动检测（Lineup Stability）：
+    将赛前1小时官宣的 11 人首发与球队上一场 11 人首发自动对比；
+    若单队轮换 >= 4 名主力，自动扣减攻防修正分并生成大白话预警！
+    """
+    if not current_starters:
+        return None
+    saved = _load_last_starters()
+    h_delta = 0.0
+    a_delta = 0.0
+    notes: List[str] = []
+    updated = False
+
+    for team, cn, is_home in ((home_team, home_cn, True), (away_team, away_cn, False)):
+        cur_list = current_starters.get(team) or []
+        if len(cur_list) < 9:
+            continue
+        prev_list = saved.get(team) or []
+        if len(prev_list) >= 9:
+            prev_set = set(prev_list)
+            cur_set = set(cur_list)
+            changed = len(cur_set - prev_set)
+            if changed >= 4:
+                pen = -min(0.10, round((changed - 3) * 0.025, 3))
+                if is_home:
+                    h_delta = pen
+                else:
+                    a_delta = pen
+                notes.append(f"⚠️ {cn}临场大轮换（相比上场换了 {changed} 名主力，小心留力或磨合不足）")
+        if cur_list != prev_list:
+            saved[team] = cur_list[:11]
+            updated = True
+
+    if updated:
+        _save_last_starters(saved)
+
+    if not notes:
+        return None
+    return {
+        "category": "injuries_lineup",
+        "home_delta": h_delta,
+        "away_delta": a_delta,
+        "reason": "；".join(notes),
+        "source_name": "自动临场首发轮换对比",
+        "source_url": "",
+    }
 
 
 def load_manual_intel(match_id: str) -> List[Dict[str, Any]]:
@@ -244,26 +313,26 @@ def compute_traffic_light(
     has_strong_intel: bool,
     abnormal_odds_shift: bool,
 ) -> tuple[str, str]:
-    """第三层：市场赔率红绿灯防偏体检"""
+    """第三层：市场赔率红绿灯防偏体检（全大白话输出，让所有球迷一眼看懂）"""
     if any(x is None for x in market_probs):
-        return "YELLOW", "暂无主流机构赔率对照，当前预测完全基于数理底盘与情报，建议开赛前核对盘口。"
+        return "YELLOW", "暂时还没抓到全球主流赔率做对比，建议临开球前再看一眼最新变化。"
 
     diffs = [abs(f - m) for f, m in zip(final_probs, market_probs)]  # type: ignore
     max_diff = max(diffs)
     diff_pct = round(max_diff * 100, 1)
 
     if abnormal_odds_shift and max_diff > MARKET_TRAFFIC_LIGHT["green_max_diff"]:
-        return "RED", f"盘口出现异常大幅波动且与模型分歧达 {diff_pct}%，极可能存在未公开伤停或大资金异动，强烈建议临场看首发后再决定！"
+        return "RED", f"临场赔率突然大变，且和模型看法相差 {diff_pct}%！可能有突发伤病或大资金异动，一定要等赛前1小时看首发，别盲目重注。"
 
     if max_diff <= MARKET_TRAFFIC_LIGHT["green_max_diff"]:
-        return "GREEN", f"模型概率与市场去水概率高度一致（最大偏差仅 {diff_pct}%），属于稳健共振场次。"
+        return "GREEN", f"数据模型和全球主流赔率看法高度一致（相差仅 {diff_pct}%），没有明显暗雷，参考价值高。"
 
     if max_diff <= MARKET_TRAFFIC_LIGHT["yellow_max_diff"]:
         if has_strong_intel:
-            return "YELLOW", f"模型与市场存在 {diff_pct}% 偏差，但已有明确伤停/赛程情报支撑，具备潜在价值或防冷参考意义。"
-        return "YELLOW", f"模型与市场存在 {diff_pct}% 偏差，当前尚未查到重磅新闻解释，建议重点关注临场首发。"
+            return "YELLOW", f"模型和赔率有 {diff_pct}% 的分歧，但我们查到了伤停/赛程理由支撑，留意冷门或性价比机会。"
+        return "YELLOW", f"模型和赔率有 {diff_pct}% 的分歧，暂时没查到重磅伤停解释，稳妥起见优先防平或等赛前1小时看首发。"
 
-    return "RED", f"模型与市场分歧过大（高达 {diff_pct}%）！可能存在模型未捕捉的隐性战意或临场突发伤病，严禁盲目重注，请务必人工复核。"
+    return "RED", f"模型和全球赔率分歧太大（相差 {diff_pct}%）！可能存在没公开的伤病或放水战意，极易爆冷，建议看热闹别重注。"
 
 
 def clamp_intel_items(raw_items: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], float, float]:
@@ -364,23 +433,54 @@ def compute_confidence_score(pred: Dict[str, Any]) -> Dict[str, Any]:
     if total >= 80:
         stars, tier = "⭐⭐⭐⭐⭐", "极高把握·核心重点"
     elif total >= 68:
-        stars, tier = "⭐⭐⭐⭐", "较高把握·稳健推荐"
+        stars, tier = "⭐⭐⭐⭐", "较高把握·稳健参考"
     elif total >= 55:
         stars, tier = "⭐⭐⭐", "中等把握·理性参考"
     elif total >= 40:
-        stars, tier = "⭐⭐", "把握偏低·建议观望"
+        stars, tier = "⭐⭐", "把握偏低·建议防冷或观望"
     else:
-        stars, tier = "⭐", "高危红灯·建议避坑"
+        stars, tier = "⭐", "高危红灯·建议避开"
 
-    reason = (
-        f"胜率优势 {s_prob:.0f}/45 + 市场共振 {s_market:+.0f}/30 + "
-        f"数据完整 {s_data:.0f}/15 + xG差 {s_xg:.0f}/10（{mkt_reason}）"
-    )
+    # 大白话排序理由（让不看专业术语的普通球迷一眼秒懂为什么排在第几名）
+    plain_reasons = []
+    if s_prob >= 28:
+        plain_reasons.append("两队实力差距很明显")
+    elif s_prob >= 16:
+        plain_reasons.append("强弱有一定差距")
+    else:
+        plain_reasons.append("两队实力比较接近、容易胶着")
+
+    if light == "GREEN":
+        plain_reasons.append("和全球主流赔率看法一致")
+    elif light == "YELLOW":
+        plain_reasons.append("和赔率略有分歧(建议看首发)")
+    else:
+        plain_reasons.append("和赔率分歧太大或异常变盘(已自动降排)")
+
+    if s_xg >= 6.5:
+        plain_reasons.append("预计净胜球优势大")
+
+    # v1.6 大白话实战策略标签（结合昨晚绿灯5/5、黄灯防平3/3规律）
+    rec_code = pred.get("recommended_outcome") or "H"
+    side_word = "主胜" if rec_code == "H" else ("客胜" if rec_code == "A" else "平局")
+    dc_word = "主队不输(胜/平)" if float(pred.get("final_prob_home") or 0) >= float(pred.get("final_prob_away") or 0) else "客队不输(平/负)"
+
+    if light == "GREEN" and total >= 68:
+        play_advice = f"🔥 稳胆思路：可优先看{side_word}（求稳防冷可选「{dc_word}」）"
+    elif light == "GREEN":
+        play_advice = f"⚖️ 势均力敌：数据靠谱但实力接近，单挑{side_word}有风险，稳妥优先看「{dc_word}」"
+    elif light == "YELLOW":
+        play_advice = f"🛡️ 防平优先：数据与赔率有分歧，别盲目单挑独赢，建议等赛前1小时看首发或选「{dc_word}」"
+    else:
+        play_advice = "🚫 高危观望：分歧过大或突然变盘，极易爆冷，建议只看球别重注"
+
+    reason = " + ".join(plain_reasons)
     return {
         "score": total,
         "stars": stars,
         "tier": tier,
         "reason": reason,
+        "play_advice": play_advice,
         "breakdown": {
             "prob_score": s_prob,
             "market_score": s_market,
@@ -449,6 +549,8 @@ def predict_match(
                     odds_analysis["market_prob_away"],
                 ),
                 over_under_line=latest_odds_row.get("over_under_line"),
+                over_odds=latest_odds_row.get("over_odds"),
+                under_odds=latest_odds_row.get("under_odds"),
             )
             if mkt_eg:
                 if not has_h_elo and not has_a_elo:
@@ -493,6 +595,15 @@ def predict_match(
     effective_manual = ai_intel_items if ai_intel_items is not None else load_manual_intel(match["match_id"])
     combined_items: List[Dict[str, Any]] = list(effective_manual or [])
     existing_cats = {x.get("category") for x in combined_items}
+
+    # v1.6 自动检测临场官宣首发是否发生大轮换（0成本对比连续两场首发名单）
+    if "injuries_lineup" not in existing_cats and live_summary.get("starters"):
+        rot_item = detect_lineup_rotation(
+            home, away, match["home_team_cn"], match["away_team_cn"], live_summary["starters"]
+        )
+        if rot_item:
+            combined_items.append(rot_item)
+            existing_cats.add("injuries_lineup")
 
     if "fixture_fatigue" not in existing_cats and (
         fatigue_info["auto_home_delta"] != 0.0 or fatigue_info["auto_away_delta"] != 0.0
@@ -549,7 +660,7 @@ def predict_match(
         abnormal_odds_shift=odds_analysis["abnormal_shift"],
     )
     if cross_league_anchored:
-        traffic_note = f"[跨联赛贝叶斯校准] {traffic_note}"
+        traffic_note = f"（已结合跨联赛赔率校准）{traffic_note}"
 
     value_ev = compute_ev_and_kelly(
         (final_matrix["prob_home"], final_matrix["prob_draw"], final_matrix["prob_away"]),

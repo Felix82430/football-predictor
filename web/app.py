@@ -167,6 +167,8 @@ def sync_all_leagues(days_back: int = 3, days_ahead: int = 7) -> Dict[str, Any]:
                     away_odds=odds["away_odds"],
                     asian_handicap=odds.get("asian_handicap"),
                     over_under_line=odds.get("over_under_line"),
+                    over_odds=odds.get("over_odds"),
+                    under_odds=odds.get("under_odds"),
                 )
                 if sid:
                     snaps += 1

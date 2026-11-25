@@ -75,6 +75,8 @@ def sync_quick(days_back: int = 2, days_ahead: int = 3) -> Dict[str, int]:
                     away_odds=odds["away_odds"],
                     asian_handicap=odds.get("asian_handicap"),
                     over_under_line=odds.get("over_under_line"),
+                    over_odds=odds.get("over_odds"),
+                    under_odds=odds.get("under_odds"),
                 ):
                     snaps += 1
     return {"synced_matches": total, "new_odds_snapshots": snaps}

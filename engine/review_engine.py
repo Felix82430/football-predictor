@@ -258,10 +258,36 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
                 "acc": round(sum(x["outcome_hit"] for x in grp) / len(grp), 4),
             }
 
+    # 全玩法长期命中率统计（双选防冷、大小球2.5、绿灯胜平负），方便一周后看哪种玩法最稳
+    dc_hits = 0
+    o25_hits = 0
+    green_total = 0
+    green_hits = 0
+    for r in reviews:
+        hg, ag = int(r["actual_home_score"]), int(r["actual_away_score"])
+        ph = float(r.get("final_prob_home") or 0)
+        pa = float(r.get("final_prob_away") or 0)
+        if ph >= pa:
+            dc_hits += 1 if hg >= ag else 0
+        else:
+            dc_hits += 1 if ag >= hg else 0
+        if r.get("traffic_light") == "GREEN":
+            green_total += 1
+            green_hits += int(r["outcome_hit"])
+        # 大小2.5需查 predictions 表中的 over_25_prob（若存在）
+        if r.get("over_25_prob") is not None:
+            pred_o25 = float(r["over_25_prob"]) >= 0.5
+            o25_hits += 1 if (pred_o25 == ((hg + ag) >= 3)) else 0
+
     return {
         "total": n,
         "outcome_hits": hits,
         "outcome_acc": round(hits / n, 4),
+        "double_chance_hits": dc_hits,
+        "double_chance_acc": round(dc_hits / n, 4),
+        "green_total": green_total,
+        "green_hits": green_hits,
+        "green_acc": round(green_hits / green_total, 4) if green_total else None,
         "top3_hits": top3,
         "top3_acc": round(top3 / n, 4),
         "exact_top1_hits": top1,
