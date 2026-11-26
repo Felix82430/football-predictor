@@ -171,7 +171,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>⚽ 足球量化情报官 · 手机直看版</title>
+  <title>⚽ 足球量化情报官 · 五大联赛与欧冠</title>
   <style>
     :root {
       --bg: #0b1120;
@@ -193,25 +193,37 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     header {
       position: sticky; top: 0; z-index: 40;
       background: rgba(11, 17, 32, 0.94); backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border); padding: 10px 14px;
+      border-bottom: 1px solid var(--border); padding: 10px 18px;
     }
-    .head-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .brand { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
-    .upd-tag { font-size: 11px; color: var(--accent); background: rgba(56,189,248,.12); padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(56,189,248,.28); }
-    .container { max-width: 1100px; margin: 0 auto; padding: 12px 12px 24px; }
+    .head-top { max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .brand { font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .upd-tag { font-size: 11px; font-weight: 600; color: var(--accent); background: rgba(56,189,248,.12); padding: 2px 9px; border-radius: 999px; border: 1px solid rgba(56,189,248,.28); }
+    .top-nav { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .top-tab {
+      background: transparent; color: var(--muted); border: 1px solid transparent;
+      padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: .18s;
+    }
+    .top-tab:hover { color: var(--text); background: var(--panel); }
+    .top-tab.active { color: #fff; background: #1d4ed8; border-color: #3b82f6; }
+    .container { max-width: 1180px; margin: 0 auto; padding: 14px 14px 28px; }
 
-    /* 底部手机固定导航栏 */
+    /* 底部手机固定导航栏（电脑宽屏自动隐藏，改用右上角导航） */
     .bottom-nav {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
       background: rgba(15, 23, 42, 0.97); backdrop-filter: blur(10px);
-      border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(4, 1fr);
       padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     }
     .nav-item {
-      background: none; border: none; color: var(--muted); font-size: 12px; font-weight: 700;
+      background: none; border: none; color: var(--muted); font-size: 11px; font-weight: 700;
       padding: 6px 4px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
     }
     .nav-item.active { color: var(--accent); background: rgba(56,189,248,.12); }
+    @media (min-width: 720px) {
+      body { padding-bottom: 24px; }
+      .top-nav { display: flex; }
+      .bottom-nav { display: none; }
+    }
 
     .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
     @media (min-width: 720px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
@@ -298,8 +310,16 @@ MOBILE_HTML = r"""<!DOCTYPE html>
 <body>
   <header>
     <div class="head-top">
-      <div class="brand">⚽ 足球量化情报官</div>
-      <span class="upd-tag" id="updTime">加载中...</span>
+      <div class="brand">
+        <span>⚽ 足球量化情报官</span>
+        <span class="upd-tag" id="updTime">加载中...</span>
+      </div>
+      <nav class="top-nav">
+        <button class="top-tab active" data-tab="matches" onclick="goTab('matches')">赛程与预测</button>
+        <button class="top-tab" data-tab="reviews" onclick="goTab('reviews')">每日赛后复盘</button>
+        <button class="top-tab" data-tab="backtest" onclick="goTab('backtest')">历史滚动回测</button>
+        <button class="top-tab" data-tab="settings" onclick="goTab('settings')">飞书推送与设置</button>
+      </nav>
     </div>
   </header>
 
@@ -350,13 +370,37 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     <div id="tab-backtest" class="section">
       <div id="btWrap"></div>
     </div>
+
+    <!-- Tab 4: 飞书推送与设置 -->
+    <div id="tab-settings" class="section">
+      <div class="box">
+        <h4>📲 云端自动推送计划（电脑关机照常运行）</h4>
+        <div style="font-size:13px;display:grid;gap:8px;color:var(--text);">
+          <div>• <strong>每日 08:43 / 09:43</strong>：双保险核对昨晚完场比分并推送《每日赛后复盘报告》</div>
+          <div>• <strong>每日 11:43 / 12:43</strong>：双保险推送《午间焦点赛前初判简报》</div>
+          <div>• <strong>每日 19:43 / 20:43</strong>：双保险推送《晚间盘口更新简报》</div>
+          <div>• <strong>每日 18:13 ~ 次日 03:13（每小时）</strong>：赛前约 1 小时临场终审巡检，检测官方首发大轮换并锁单推飞书</div>
+        </div>
+      </div>
+      <div class="box">
+        <h4>⚙️ 密钥安全与本机完整控制台说明</h4>
+        <div style="font-size:13px;color:var(--muted);display:grid;gap:8px;">
+          <div>• 为防止飞书机器人 Webhook 密钥泄露，本云端展示页仅做安全只读展示，不存放任何密钥。</div>
+          <div>• 如需修改飞书 Webhook、手动实时抓拍盘口或运行本地批量分析，请在本机双击 <strong style="color:#fff;">启动足球预测软件.bat</strong> 访问 <strong style="color:var(--accent);">http://127.0.0.1:8765</strong>。</div>
+          <div style="margin-top:4px;">
+            <a href="https://github.com/Felix82430/football-predictor/actions" target="_blank" rel="noopener" class="btn btn-green" style="text-decoration:none;display:inline-block;">🚀 打开云端推送后台（可一键手动触发）</a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- 底部手机导航 -->
+  <!-- 底部手机导航（手机小屏自动显示） -->
   <div class="bottom-nav">
-    <button class="nav-item active" onclick="goTab('matches', this)"><span>⚽</span><span>赛程预测</span></button>
-    <button class="nav-item" onclick="goTab('reviews', this)"><span>📋</span><span>赛后复盘</span></button>
-    <button class="nav-item" onclick="goTab('backtest', this)"><span>📊</span><span>历史回测</span></button>
+    <button class="nav-item active" data-tab="matches" onclick="goTab('matches')"><span>⚽</span><span>赛程预测</span></button>
+    <button class="nav-item" data-tab="reviews" onclick="goTab('reviews')"><span>📋</span><span>赛后复盘</span></button>
+    <button class="nav-item" data-tab="backtest" onclick="goTab('backtest')"><span>📊</span><span>历史回测</span></button>
+    <button class="nav-item" data-tab="settings" onclick="goTab('settings')"><span>📲</span><span>飞书设置</span></button>
   </div>
 
   <!-- 单场详情抽屉 -->
@@ -370,11 +414,13 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     const OUT_ZH = { H: '主胜', D: '平局', A: '客胜' };
     const LIGHT_ZH = { GREEN: '🟢 稳健一致', YELLOW: '🟡 留意分歧', RED: '🔴 高危红灯' };
 
-    function goTab(name, btn) {
+    function goTab(name) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-      document.getElementById('tab-' + name).classList.add('active');
-      if (btn) btn.classList.add('active');
+      document.querySelectorAll('.nav-item, .top-tab').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === name);
+      });
+      const el = document.getElementById('tab-' + name);
+      if (el) el.classList.add('active');
       window.scrollTo(0, 0);
     }
 
