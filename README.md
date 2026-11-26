@@ -4,7 +4,7 @@
 
 ## 一、本机环境与云端状态
 
-- **数据与代码**：✅ **完整迁移并已与 GitHub 远端对齐**（包含 SQLite 数据库 [football_predictor.db](file:///d:/gemini/projects/football-predictor/data/football_predictor.db)、五大联赛历史缓存 CSV、飞书配置 [settings.json](file:///d:/gemini/projects/football-predictor/data/settings.json) 及静态展示页 [docs/index.html](file:///d:/gemini/projects/football-predictor/docs/index.html)）
+- **数据与代码**：✅ **本地与 GitHub 远端已对齐**（包含 SQLite 数据库 [football_predictor.db](file:///d:/gemini/projects/football-predictor/data/football_predictor.db)、五大联赛历史缓存 CSV、飞书配置 [settings.json](file:///d:/gemini/projects/football-predictor/data/settings.json) 及静态展示页 [docs/index.html](file:///d:/gemini/projects/football-predictor/docs/index.html)）
 - **运行环境**：✅ **已就绪（实测通过）**（Python 3.12.8、Git 2.47.1、`.venv` 虚拟环境与全部 9 项依赖库均齐全；CLI、数据库读写、量化引擎及 FastAPI Web 服务均正常）
 - **云端自动托管**：✅ 已绑定 GitHub 仓库 `Felix82430/football-predictor`，通过 [.github/workflows/football_auto_push.yml](file:///d:/gemini/projects/football-predictor/.github/workflows/football_auto_push.yml) 实现 0 成本定时拉取盘口、推送飞书与刷新手机网页。
   > **本地/云端防冲突提醒**：每次在本地执行同步、分析或复盘前，建议先运行 `git pull --ff-only` 拉取云端最新数据库。
