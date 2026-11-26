@@ -206,7 +206,7 @@ def load_settings() -> Dict[str, Any]:
         "daily_push_times": ["12:00", "20:00"],
         "review_push_time": "09:30",
         "prematch_1h_enabled": True,
-        "model_version": "v1.0-试运营",
+        "model_version": "v1.6",
     }
     if SETTINGS_PATH.exists():
         try:
