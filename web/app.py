@@ -107,6 +107,8 @@ def get_overview() -> Dict[str, Any]:
     with get_conn() as conn:
         total_matches = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
         upcoming = conn.execute("SELECT COUNT(*) FROM matches WHERE status='SCHEDULED'").fetchone()[0]
+        live_cnt = conn.execute("SELECT COUNT(*) FROM matches WHERE status='LIVE'").fetchone()[0]
+        finished_cnt = conn.execute("SELECT COUNT(*) FROM matches WHERE status='FINISHED'").fetchone()[0]
         locked_preds = conn.execute("SELECT COUNT(DISTINCT match_id) FROM predictions WHERE is_locked=1").fetchone()[0]
         odds_snaps = conn.execute("SELECT COUNT(*) FROM odds_snapshots").fetchone()[0]
 
@@ -119,6 +121,9 @@ def get_overview() -> Dict[str, Any]:
     return {
         "total_matches": total_matches,
         "upcoming_matches": upcoming,
+        "live_matches": live_cnt,
+        "finished_matches": finished_cnt,
+        "started_matches": live_cnt + finished_cnt,
         "locked_predictions": locked_preds,
         "odds_snapshots": odds_snaps,
         "review_summary": review_summary,

@@ -453,8 +453,11 @@ def list_matches_with_predictions(
         sql += " AND m.league_code = ?"
         params.append(league_code)
     if status and status != "ALL":
-        sql += " AND m.status = ?"
-        params.append(status)
+        if status == "STARTED":
+            sql += " AND m.status IN ('LIVE', 'FINISHED')"
+        else:
+            sql += " AND m.status = ?"
+            params.append(status)
     sql += " ORDER BY m.kickoff_utc ASC LIMIT ?"
     params.append(limit)
     with get_conn() as conn:
@@ -529,6 +532,12 @@ def save_review(review: Dict[str, Any]) -> None:
 
 def add_tuning_lesson(category: str, lesson: str, suggested_action: str) -> int:
     with get_conn() as conn:
+        exists = conn.execute(
+            "SELECT id FROM tuning_lessons WHERE category = ? AND lesson = ? LIMIT 1",
+            (category, lesson),
+        ).fetchone()
+        if exists:
+            return int(exists["id"])
         cur = conn.execute(
             """
             INSERT INTO tuning_lessons (created_at, category, lesson, suggested_action)
@@ -547,11 +556,12 @@ def list_reviews(limit: int = 100) -> List[Dict[str, Any]]:
                    m.home_team_cn, m.away_team_cn, m.kickoff_bjt,
                    p.recommended_outcome, p.top3_scores_json, p.traffic_light,
                    p.final_prob_home, p.final_prob_draw, p.final_prob_away,
+                   p.over_25_prob, p.stage, p.is_locked,
                    p.home_intel_delta, p.away_intel_delta
             FROM post_match_reviews r
             JOIN matches m ON r.match_id = m.match_id
             JOIN predictions p ON r.prediction_id = p.id
-            ORDER BY r.reviewed_at DESC
+            ORDER BY substr(m.kickoff_bjt, 1, 10) DESC, r.confidence_score DESC, m.kickoff_bjt ASC
             LIMIT ?
             """,
             (limit,),

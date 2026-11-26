@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from data_sources.espn_client import fetch_event_summary
@@ -25,6 +26,16 @@ from database import (
     save_review,
 )
 from engine.predictor import compute_confidence_score
+
+
+def _extract_red_card_minutes(red_cards: List[str]) -> List[int]:
+    """提取红牌发生分钟数，仅 <=75 分钟的红牌才真正改变了比赛人数平衡"""
+    mins: List[int] = []
+    for rc in red_cards:
+        m = re.match(r"\s*(\d+)", str(rc))
+        if m:
+            mins.append(int(m.group(1)))
+    return mins
 
 
 def _calc_brier(ph: float, pd: float, pa: float, actual: str) -> float:
@@ -109,8 +120,9 @@ def review_finished_matches(custom_notes: Optional[Dict[str, Dict[str, str]]] = 
         else:
             # 未命中时区分“足球偶然事件”还是“模型/情报失误”
             luck_reasons = []
-            if red_cards:
-                luck_reasons.append(f"比赛出现红牌改变了人数平衡（{red_note}）")
+            early_reds = [rc for rc in red_cards if not _extract_red_card_minutes([rc]) or _extract_red_card_minutes([rc])[0] <= 75]
+            if early_reds:
+                luck_reasons.append(f"比赛前75分钟出现红牌改变了人数平衡（{'；'.join(early_reds)}）")
             if h_shots is not None and a_shots is not None:
                 if pred["recommended_outcome"] == "H" and h_shots >= a_shots + 8:
                     luck_reasons.append(f"主队场面大幅占优（射门 {int(h_shots)}:{int(a_shots)}）却未能兑现进球")
@@ -258,11 +270,31 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
                 "acc": round(sum(x["outcome_hit"] for x in grp) / len(grp), 4),
             }
 
-    # 全玩法长期命中率统计（双选防冷、大小球2.5、绿灯胜平负），方便一周后看哪种玩法最稳
+    # 全玩法长期命中率统计 + v1.7 模拟 100 元均注真实盈亏 ROI 账本（杜绝“只看胜率不看赔率”自嗨）
     dc_hits = 0
     o25_hits = 0
     green_total = 0
     green_hits = 0
+    stake_unit = 100.0
+    flat_stake = 0.0
+    flat_return = 0.0
+    high_stake = 0.0
+    high_return = 0.0
+
+    # 一次性查出各场最新欧赔用于计算均注真实收益
+    odds_map: Dict[str, Dict[str, Any]] = {}
+    match_ids = [r["match_id"] for r in reviews if r.get("match_id")]
+    if match_ids:
+        with get_conn() as conn:
+            for mid in set(match_ids):
+                row = conn.execute(
+                    "SELECT home_odds, draw_odds, away_odds FROM odds_snapshots WHERE match_id=? ORDER BY captured_at DESC LIMIT 1",
+                    (mid,),
+                ).fetchone()
+                if row:
+                    odds_map[mid] = dict(row)
+
+    odds_key_map = {"H": "home_odds", "D": "draw_odds", "A": "away_odds"}
     for r in reviews:
         hg, ag = int(r["actual_home_score"]), int(r["actual_away_score"])
         ph = float(r.get("final_prob_home") or 0)
@@ -274,10 +306,32 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
         if r.get("traffic_light") == "GREEN":
             green_total += 1
             green_hits += int(r["outcome_hit"])
-        # 大小2.5需查 predictions 表中的 over_25_prob（若存在）
         if r.get("over_25_prob") is not None:
             pred_o25 = float(r["over_25_prob"]) >= 0.5
             o25_hits += 1 if (pred_o25 == ((hg + ag) >= 3)) else 0
+
+        # 单场 100 元均注测算（按主推胜平负实际欧赔）
+        rec_out = r.get("recommended_outcome")
+        od_row = odds_map.get(r.get("match_id") or "")
+        used_odds = od_row.get(odds_key_map.get(rec_out, "")) if od_row else None
+        if used_odds and float(used_odds) > 1.0:
+            used_odds = float(used_odds)
+            profit = round((used_odds - 1.0) * stake_unit, 1) if r["outcome_hit"] else -stake_unit
+            r["used_odds"] = round(used_odds, 2)
+            r["flat_profit"] = profit
+            flat_stake += stake_unit
+            flat_return += (used_odds * stake_unit) if r["outcome_hit"] else 0.0
+            if (r.get("confidence_score") or 0) >= 68:
+                high_stake += stake_unit
+                high_return += (used_odds * stake_unit) if r["outcome_hit"] else 0.0
+        else:
+            r["used_odds"] = None
+            r["flat_profit"] = None
+
+    flat_profit = round(flat_return - flat_stake, 1) if flat_stake > 0 else None
+    flat_roi = round((flat_return - flat_stake) / flat_stake * 100.0, 1) if flat_stake > 0 else None
+    high_profit = round(high_return - high_stake, 1) if high_stake > 0 else None
+    high_roi = round((high_return - high_stake) / high_stake * 100.0, 1) if high_stake > 0 else None
 
     return {
         "total": n,
@@ -297,4 +351,8 @@ def summarize_review_performance(reviews: List[Dict[str, Any]]) -> Dict[str, Any
         "upset_saves": saves,
         "avg_clv": avg_clv,
         "tier_stats": tier_stats,
+        "flat_profit": flat_profit,
+        "flat_roi": flat_roi,
+        "high_tier_profit": high_profit,
+        "high_tier_roi": high_roi,
     }

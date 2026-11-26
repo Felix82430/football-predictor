@@ -157,8 +157,8 @@ def run_prematch_1h(force: bool = False) -> Dict[str, Any]:
         except Exception:
             continue
         mins_left = (kdt - now_utc).total_seconds() / 60.0
-        # 容错 GitHub 免费队列延迟，放宽到 15~115 分钟（靠 push_key 保证每场严格只推 1 次）
-        if 15.0 <= mins_left <= 115.0:
+        # 容错 GitHub 免费队列延迟，放宽到 1~115 分钟（只要未开球一律抓首发并锁盘，靠 push_key 保证每场严格只推 1 次）
+        if 1.0 <= mins_left <= 115.0:
             due.append(r)
 
     if not due:

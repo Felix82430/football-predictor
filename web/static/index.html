@@ -58,6 +58,21 @@
       background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
     }
     .chip.active { background: var(--accent); color: #061325; border-color: var(--accent); font-weight: 700; }
+    .status-seg {
+      display: inline-flex; gap: 4px; background: #0b1326; padding: 3px; border-radius: 9px; border: 1px solid var(--border);
+    }
+    .st-btn {
+      background: transparent; color: var(--muted); border: none; border-radius: 6px;
+      padding: 5px 11px; font-size: 13px; font-weight: 700; cursor: pointer; transition: .15s;
+    }
+    .st-btn:hover { color: var(--text); }
+    .st-btn.active { background: #1d4ed8; color: #fff; }
+    .day-banner {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+      background: linear-gradient(90deg, rgba(56,189,248,.14), rgba(17,26,46,.95));
+      border: 1px solid rgba(56,189,248,.30); border-radius: 9px; padding: 9px 14px; margin: 14px 0 8px;
+      font-size: 13px; font-weight: 700;
+    }
 
     .btn {
       padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
@@ -158,6 +173,11 @@
     <div id="tab-matches" class="section active">
       <div class="toolbar">
         <div class="filters" id="leagueFilters">
+          <div class="status-seg" id="statusSeg">
+            <button class="st-btn active" data-st="SCHEDULED" onclick="setStatus('SCHEDULED', this)">⏳ 未开赛 <span id="cntSched"></span></button>
+            <button class="st-btn" data-st="STARTED" onclick="setStatus('STARTED', this)">🏁 已开赛/完场 <span id="cntStart"></span></button>
+            <button class="st-btn" data-st="ALL" onclick="setStatus('ALL', this)">📋 全部 <span id="cntAll"></span></button>
+          </div>
           <span class="chip active" onclick="setLeague('ALL', this)">全部</span>
           <span class="chip" onclick="setLeague('EPL', this)">英超</span>
           <span class="chip" onclick="setLeague('LALIGA', this)">西甲</span>
@@ -165,11 +185,6 @@
           <span class="chip" onclick="setLeague('BUNDESLIGA', this)">德甲</span>
           <span class="chip" onclick="setLeague('LIGUE1', this)">法甲</span>
           <span class="chip" onclick="setLeague('UCL', this)">欧冠</span>
-          <select id="statusFilter" onchange="loadMatches()" style="margin-left:8px;">
-            <option value="SCHEDULED">仅看未开赛</option>
-            <option value="ALL">全部状态</option>
-            <option value="FINISHED">仅看已完场</option>
-          </select>
           <select id="sortFilter" onchange="loadMatches()">
             <option value="confidence" selected>🏆 按把握度从高到低</option>
             <option value="time">🕒 按开球时间顺序</option>
@@ -293,6 +308,7 @@
 
   <script>
     let currentLeague = 'ALL';
+    let currentStatus = 'SCHEDULED';
     let activeMatchId = null;
     let activeIntelItems = [];
 
@@ -332,6 +348,13 @@
       if (name === 'settings') loadSettings();
     }
 
+    function setStatus(st, btn) {
+      currentStatus = st;
+      document.querySelectorAll('#statusSeg .st-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      loadMatches();
+    }
+
     function setLeague(lg, el) {
       currentLeague = lg;
       document.querySelectorAll('#leagueFilters .chip').forEach(c => c.classList.remove('active'));
@@ -345,6 +368,12 @@
         document.getElementById('kpiUpcoming').textContent = d.upcoming_matches;
         document.getElementById('kpiSnaps').textContent = `盘口快照：${d.odds_snapshots} 条`;
         document.getElementById('kpiLocked').textContent = d.locked_predictions;
+        const cSched = document.getElementById('cntSched');
+        const cStart = document.getElementById('cntStart');
+        const cAll = document.getElementById('cntAll');
+        if (cSched) cSched.textContent = `(${d.upcoming_matches})`;
+        if (cStart) cStart.textContent = `(${d.started_matches ?? 0})`;
+        if (cAll) cAll.textContent = `(${d.total_matches ?? 0})`;
 
         const rs = d.review_summary;
         if (rs && rs.total > 0) {
@@ -368,9 +397,9 @@
     }
 
     async function loadMatches() {
-      const status = document.getElementById('statusFilter').value;
+      const status = currentStatus;
       const sort = document.getElementById('sortFilter') ? document.getElementById('sortFilter').value : 'confidence';
-      const d = await api(`/api/matches?league=${currentLeague}&status=${status}&sort=${sort}&limit=80`);
+      const d = await api(`/api/matches?league=${currentLeague}&status=${status}&sort=${sort}&limit=100`);
       const grid = document.getElementById('matchGrid');
       if (!d.items.length) {
         grid.innerHTML = `<div class="box" style="grid-column:1/-1;text-align:center;color:var(--muted);">暂无符合条件的赛程，请先点击右上角「🔄 同步赛程+抓拍盘口」。</div>`;
@@ -774,32 +803,59 @@
       ).join(' ');
       const clvStr = (s.avg_clv !== null && s.avg_clv !== undefined) ? ` | 平均CLV收盘价值 <strong>${s.avg_clv>=0?'+':''}${s.avg_clv}%</strong>` : '';
 
+      const roiStr = (s.flat_profit !== null && s.flat_profit !== undefined)
+        ? ` | 💰均注100元 <strong style="color:${s.flat_profit>=0?'#4ade80':'#f87171'};">${s.flat_profit>=0?'+':''}${s.flat_profit}元 (ROI ${s.flat_roi>=0?'+':''}${s.flat_roi}%)</strong>`
+        : '';
+      const hiRoiStr = (s.high_tier_profit !== null && s.high_tier_profit !== undefined)
+        ? ` | ⭐高把握均注 <strong style="color:${s.high_tier_profit>=0?'#4ade80':'#fbbf24'};">${s.high_tier_profit>=0?'+':''}${s.high_tier_profit}元 (ROI ${s.high_tier_roi>=0?'+':''}${s.high_tier_roi}%)</strong>`
+        : '';
+
       document.getElementById('reviewSummaryText').innerHTML = s.total > 0
-        ? `累计核对 <strong>${s.total}</strong> 场${clvStr} | 胜平负命中 <strong>${s.outcome_hits}/${s.total} (${(s.outcome_acc*100).toFixed(1)}%)</strong> | Top3比分命中 <strong>${s.top3_hits} 场 (${(s.top3_acc*100).toFixed(1)}%)</strong> | 精准首选比分 <strong>${s.exact_top1_hits}</strong> 场 | 🎲偶然红牌/运气 <strong>${s.luck_misses}</strong> 场 | ❌模型/情报误判 <strong>${s.model_misses}</strong> 场 | 🛡️红黄灯避坑 <strong>${s.upset_saves}</strong> 次` + (tierHtml ? `<div style="margin-top:8px;">按把握度分层命中率：${tierHtml}</div>` : '')
+        ? `累计核对 <strong>${s.total}</strong> 场${clvStr} | 胜平负命中 <strong>${s.outcome_hits}/${s.total} (${(s.outcome_acc*100).toFixed(1)}%)</strong> | Top3比分命中 <strong>${s.top3_hits} 场 (${(s.top3_acc*100).toFixed(1)}%)</strong> | 精准首选比分 <strong>${s.exact_top1_hits}</strong> 场 | 🎲前75分红牌/运气 <strong>${s.luck_misses}</strong> 场 | ❌模型/情报误判 <strong>${s.model_misses}</strong> 场${roiStr}${hiRoiStr}` + (tierHtml ? `<div style="margin-top:8px;">按把握度分层命中率：${tierHtml}</div>` : '')
         : '暂无已完场且有预测记录的比赛。等你完成首批预测并待比赛结束后，点右上角「立即核对最新完场比分」即可自动生成复盘报告！';
 
       const attrLabel = {
         ACCURATE: '<span style="color:#4ade80;font-weight:700;">✅ 准确命中</span>',
-        VARIANCE_LUCK: '<span style="color:#fbbf24;font-weight:700;">🎲 偶然红牌/运气</span>',
+        VARIANCE_LUCK: '<span style="color:#fbbf24;font-weight:700;">🎲 偶然运气/早红牌</span>',
         MODEL_OR_INTEL_MISS: '<span style="color:#f87171;font-weight:700;">❌ 模型/情报误判</span>',
       };
 
-      document.getElementById('reviewsTableWrap').innerHTML = d.reviews.length ? `
-        <table>
-          <thead><tr><th>赛事与对阵</th><th>赛前主推 / Top3</th><th>实际比分</th><th>归因判定</th><th>复盘原因与改进建议</th></tr></thead>
-          <tbody>
-            ${d.reviews.map(r => `
-              <tr>
-                <td><strong>[${r.league_name}]</strong><br/>${r.home_team_cn} vs ${r.away_team_cn}<br/><span style="color:var(--muted);font-size:11px;">${r.kickoff_bjt}</span></td>
-                <td>主推 ${r.recommended_outcome}<br/><span style="color:var(--muted);font-size:12px;">${(r.top3_scores||[]).map(x=>x.score).join('/')}</span></td>
-                <td><strong style="font-size:16px;">${r.actual_home_score} - ${r.actual_away_score}</strong><br/>${r.top3_score_hit ? '<span style="color:#38bdf8;font-size:11px;">🎯中Top3</span>':''}</td>
-                <td>${attrLabel[r.attribution_type] || r.attribution_type}<br/><span style="color:var(--muted);font-size:11px;">红牌：${r.red_cards_note || '无'}</span></td>
-                <td>${r.root_cause_analysis}<div style="color:#38bdf8;font-size:12px;margin-top:4px;">建议：${r.tuning_suggestion || '-'}</div></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div style="color:var(--muted);font-size:13px;">暂无逐场复盘明细</div>';
+      // 按比赛日期倒序分组，每天组内严格按赛前把握度从高到低排放
+      const dayGroups = {};
+      (d.reviews || []).forEach(r => {
+        const day = (r.kickoff_bjt || r.reviewed_at || '未知日期').slice(0, 10);
+        if (!dayGroups[day]) dayGroups[day] = [];
+        dayGroups[day].push(r);
+      });
+      const days = Object.keys(dayGroups).sort((a, b) => b.localeCompare(a));
+
+      document.getElementById('reviewsTableWrap').innerHTML = days.length ? days.map(day => {
+        const list = dayGroups[day].sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0));
+        const dHits = list.filter(x => x.outcome_hit).length;
+        const dProfitArr = list.filter(x => x.flat_profit != null);
+        const dProfit = dProfitArr.length ? dProfitArr.reduce((acc, x) => acc + x.flat_profit, 0) : null;
+        return `
+          <div class="day-banner">
+            <span>📅 ${day} 复盘账本（按当天赛前把握度从高到低）</span>
+            <span style="color:var(--accent);">命中 <strong>${dHits}/${list.length} (${(dHits/list.length*100).toFixed(1)}%)</strong>${dProfit != null ? ` · 均注100元 <strong style="color:${dProfit>=0?'#4ade80':'#f87171'};">${dProfit>=0?'+':''}${dProfit.toFixed(1)}元</strong>` : ''}</span>
+          </div>
+          <table>
+            <thead><tr><th>当天排位/把握度</th><th>赛事与对阵</th><th>赛前主推 / 赔率</th><th>实际比分</th><th>归因判定</th><th>复盘原因与改进建议</th></tr></thead>
+            <tbody>
+              ${list.map((r, idx) => `
+                <tr>
+                  <td><strong style="color:#38bdf8;">No.${idx+1}</strong><br/><span class="score-chip">${(r.confidence_score||0).toFixed(0)}分</span></td>
+                  <td><strong>[${r.league_name}]</strong><br/>${r.home_team_cn} vs ${r.away_team_cn}<br/><span style="color:var(--muted);font-size:11px;">${r.kickoff_bjt}</span></td>
+                  <td>主推 ${r.recommended_outcome}${r.used_odds ? ` @${r.used_odds}` : ''}<br/>${r.flat_profit != null ? `<span style="color:${r.flat_profit>=0?'#4ade80':'#f87171'};font-weight:700;">${r.flat_profit>=0?'+':''}${r.flat_profit}元</span><br/>` : ''}<span style="color:var(--muted);font-size:12px;">${(r.top3_scores||[]).map(x=>x.score).join('/')}</span></td>
+                  <td><strong style="font-size:16px;">${r.actual_home_score} - ${r.actual_away_score}</strong><br/>${r.top3_score_hit ? '<span style="color:#38bdf8;font-size:11px;">🎯中Top3</span>':''}</td>
+                  <td>${attrLabel[r.attribution_type] || r.attribution_type}<br/><span style="color:var(--muted);font-size:11px;">红牌：${r.red_cards_note || '无'}</span></td>
+                  <td>${r.root_cause_analysis}<div style="color:#38bdf8;font-size:12px;margin-top:4px;">建议：${r.tuning_suggestion || '-'}</div></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      }).join('') : '<div style="color:var(--muted);font-size:13px;">暂无逐场复盘明细</div>';
 
       document.getElementById('lessonsWrap').innerHTML = d.lessons.length ? `
         <table>

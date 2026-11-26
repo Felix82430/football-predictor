@@ -72,10 +72,24 @@
     }
     .chip.active { background: var(--accent); color: #061325; border-color: var(--accent); }
 
-    .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+    .status-seg { display: inline-flex; gap: 6px; flex-wrap: wrap; background: var(--panel); padding: 4px; border-radius: 10px; border: 1px solid var(--border); }
+    .st-btn {
+      background: transparent; color: var(--muted); border: none; border-radius: 7px;
+      padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: .15s;
+    }
+    .st-btn:hover { color: var(--text); }
+    .st-btn.active { background: #1d4ed8; color: #fff; }
+    .day-group { margin-bottom: 16px; }
+    .day-head {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+      background: linear-gradient(90deg, rgba(56,189,248,.14), rgba(17,26,46,.95));
+      border: 1px solid rgba(56,189,248,.30); border-radius: 10px; padding: 9px 13px; margin-bottom: 9px;
+      font-size: 13px; font-weight: 700;
+    }
     select {
       background: var(--panel); color: var(--text); border: 1px solid var(--border);
-      border-radius: 8px; padding: 6px 10px; font-size: 12px; flex: 1; min-width: 130px;
+      border-radius: 8px; padding: 6px 10px; font-size: 12px; min-width: 150px;
     }
 
     .match-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -166,6 +180,17 @@
     <!-- Tab 1: 赛程预测 -->
     <div id="tab-matches" class="section active">
       <div class="legend">🟢绿灯=模型和全球赔率看法一致(最稳优先看) &nbsp;|&nbsp; 🟡黄灯=看法有分歧(建议防平或等赛前1小时看首发) &nbsp;|&nbsp; 🔴红灯=突然变盘或分歧太大(容易爆冷慎碰)</div>
+      <div class="filter-bar">
+        <div class="status-seg" id="statusSeg">
+          <button class="st-btn active" data-st="SCHEDULED" onclick="setStatus('SCHEDULED', this)">⏳ 未开赛 <span id="cntSched"></span></button>
+          <button class="st-btn" data-st="STARTED" onclick="setStatus('STARTED', this)">🏁 已开赛/完场 <span id="cntStart"></span></button>
+          <button class="st-btn" data-st="ALL" onclick="setStatus('ALL', this)">📋 全部 <span id="cntAll"></span></button>
+        </div>
+        <select id="sortSel" onchange="renderMatches()">
+          <option value="confidence" selected>🏆 按把握度从高到低</option>
+          <option value="time">🕒 按开球时间</option>
+        </select>
+      </div>
       <div class="scroll-row" id="lgChips">
         <span class="chip active" onclick="setLg('ALL', this)">全部</span>
         <span class="chip" onclick="setLg('UCL', this)">欧冠</span>
@@ -174,17 +199,6 @@
         <span class="chip" onclick="setLg('SERIEA', this)">意甲</span>
         <span class="chip" onclick="setLg('BUNDESLIGA', this)">德甲</span>
         <span class="chip" onclick="setLg('LIGUE1', this)">法甲</span>
-      </div>
-      <div class="filter-bar">
-        <select id="stSel" onchange="renderMatches()">
-          <option value="SCHEDULED" selected>仅看未开赛</option>
-          <option value="ALL">全部状态</option>
-          <option value="FINISHED">仅看已完场</option>
-        </select>
-        <select id="sortSel" onchange="renderMatches()">
-          <option value="confidence" selected>🏆 按把握度从高到低</option>
-          <option value="time">🕒 按开球时间</option>
-        </select>
       </div>
       <div class="match-grid" id="matchGrid"></div>
     </div>
@@ -243,6 +257,7 @@
   <script>
     let DATA = null;
     let curLg = 'ALL';
+    let curStatus = 'SCHEDULED';
     const OUT_ZH = { H: '主胜', D: '平局', A: '客胜' };
     const LIGHT_ZH = { GREEN: '🟢 稳健一致', YELLOW: '🟡 留意分歧', RED: '🔴 高危红灯' };
 
@@ -256,11 +271,28 @@
       window.scrollTo(0, 0);
     }
 
+    function setStatus(st, btn) {
+      curStatus = st;
+      document.querySelectorAll('#statusSeg .st-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      renderMatches();
+    }
+
     function setLg(lg, el) {
       curLg = lg;
       document.querySelectorAll('#lgChips .chip').forEach(c => c.classList.remove('active'));
       el.classList.add('active');
       renderMatches();
+    }
+
+    function refreshStatusCounts() {
+      if (!DATA) return;
+      const scoped = DATA.matches.filter(m => curLg === 'ALL' || m.league_code === curLg);
+      const nSched = scoped.filter(m => m.status === 'SCHEDULED').length;
+      const nStart = scoped.filter(m => m.status !== 'SCHEDULED').length;
+      document.getElementById('cntSched').textContent = `(${nSched})`;
+      document.getElementById('cntStart').textContent = `(${nStart})`;
+      document.getElementById('cntAll').textContent = `(${scoped.length})`;
     }
 
     async function boot() {
@@ -273,7 +305,8 @@
       const rs = DATA.reviews.summary;
       if (rs && rs.total > 0) {
         document.getElementById('kRevAcc').textContent = (rs.outcome_acc * 100).toFixed(1) + '%';
-        document.getElementById('kRevSub').textContent = `${rs.outcome_hits}/${rs.total}场 · 候选比分中${rs.top3_hits}场`;
+        const roiTxt = rs.flat_roi != null ? ` · 均注ROI ${rs.flat_roi>=0?'+':''}${rs.flat_roi}%` : '';
+        document.getElementById('kRevSub').textContent = `${rs.outcome_hits}/${rs.total}场${roiTxt}`;
         const hi = (rs.tier_stats || {})['高把握(≥68分)'];
         document.getElementById('kHighAcc').textContent = hi ? `${(hi.acc*100).toFixed(0)}% (${hi.hits}/${hi.total})` : '-';
         document.getElementById('kClv').textContent = rs.double_chance_acc != null ? `防冷双选中 ${(rs.double_chance_acc*100).toFixed(0)}%` : '持续统计中';
@@ -290,11 +323,11 @@
 
     function renderMatches() {
       if (!DATA) return;
-      const st = document.getElementById('stSel').value;
+      refreshStatusCounts();
       const sort = document.getElementById('sortSel').value;
       let list = DATA.matches.filter(m =>
         (curLg === 'ALL' || m.league_code === curLg) &&
-        (st === 'ALL' || m.status === st)
+        (curStatus === 'ALL' || (curStatus === 'STARTED' ? m.status !== 'SCHEDULED' : m.status === curStatus))
       );
       if (sort === 'confidence') {
         list.sort((a, b) => {
@@ -303,7 +336,7 @@
           return sb - sa;
         });
       } else {
-        list.sort((a, b) => a.kickoff_utc.localeCompare(b.kickoff_utc));
+        list.sort((a, b) => curStatus === 'STARTED' ? b.kickoff_utc.localeCompare(a.kickoff_utc) : a.kickoff_utc.localeCompare(b.kickoff_utc));
       }
 
       const grid = document.getElementById('matchGrid');
@@ -482,26 +515,70 @@
       const tiers = Object.entries(rs.tier_stats || {}).map(([k,v]) =>
         `<span class="pill">${k}：<strong>${v.hits}/${v.total} (${(v.acc*100).toFixed(1)}%)</strong></span>`
       ).join(' ');
+      const roiBlock = rs.flat_profit != null
+        ? `<div class="pill-row" style="margin-top:6px;">
+             <span class="pill" style="border-color:${rs.flat_profit>=0?'#22c55e':'#ef4444'};">💰 模拟每场均注100元：累计 <strong style="color:${rs.flat_profit>=0?'#4ade80':'#f87171'};">${rs.flat_profit>=0?'+':''}${rs.flat_profit}元 (ROI ${rs.flat_roi>=0?'+':''}${rs.flat_roi}%)</strong></span>
+             ${rs.high_tier_profit != null ? `<span class="pill" style="border-color:${rs.high_tier_profit>=0?'#22c55e':'#f59e0b'};">⭐ 仅跟高把握(≥68分)：<strong style="color:${rs.high_tier_profit>=0?'#4ade80':'#fbbf24'};">${rs.high_tier_profit>=0?'+':''}${rs.high_tier_profit}元 (ROI ${rs.high_tier_roi>=0?'+':''}${rs.high_tier_roi}%)</strong></span>` : ''}
+           </div>`
+        : '';
       document.getElementById('revSummary').innerHTML = `
         累计复盘 <strong>${rs.total}</strong> 场 | 胜平负猜中 <strong>${rs.outcome_hits}/${rs.total} (${(rs.outcome_acc*100).toFixed(1)}%)</strong> |
         防冷双选(不输)猜中 <strong>${rs.double_chance_hits||0}/${rs.total} (${((rs.double_chance_acc||0)*100).toFixed(1)}%)</strong> |
         3个候选比分猜中 <strong>${rs.top3_hits} 场 (${(rs.top3_acc*100).toFixed(1)}%)</strong>（第1首选直接猜中 <strong>${rs.exact_top1_hits}</strong> 场）
         <div class="pill-row" style="margin-top:8px;">${tiers}</div>
+        ${roiBlock}
       `;
-      const attrZh = { ACCURATE: '✅ 准确猜中', VARIANCE_LUCK: '🎲 场面占优但运气差', MODEL_OR_INTEL_MISS: '❌ 模型需改进' };
-      document.getElementById('revCards').innerHTML = items.map(r => `
-        <div class="box">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <strong>[${r.league_name}] ${r.home_team_cn} ${r.actual_home_score}-${r.actual_away_score} ${r.away_team_cn}</strong>
-            <span style="font-size:12px;font-weight:700;color:${r.outcome_hit?'#4ade80':'#fbbf24'};">${attrZh[r.attribution_type]||r.attribution_type}</span>
+      const attrZh = { ACCURATE: '✅ 准确猜中', VARIANCE_LUCK: '🎲 场面占优/前75分钟红牌', MODEL_OR_INTEL_MISS: '❌ 模型/情报需改进' };
+
+      // 按比赛日期（北京时间）倒序分组，当天内严格按赛前把握度从高到低顺序排放
+      const groups = {};
+      items.forEach(r => {
+        const day = (r.kickoff_bjt || r.reviewed_at || '未知日期').slice(0, 10);
+        if (!groups[day]) groups[day] = [];
+        groups[day].push(r);
+      });
+      const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+      document.getElementById('revCards').innerHTML = days.map(day => {
+        const dayItems = groups[day].sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0));
+        const dHits = dayItems.filter(x => x.outcome_hit).length;
+        const dAcc = (dHits / dayItems.length * 100).toFixed(1);
+        const dHigh = dayItems.filter(x => (x.confidence_score || 0) >= 68);
+        const dHighHits = dHigh.filter(x => x.outcome_hit).length;
+        const dProfitArr = dayItems.filter(x => x.flat_profit != null);
+        const dProfit = dProfitArr.length ? dProfitArr.reduce((s, x) => s + x.flat_profit, 0) : null;
+
+        return `
+          <div class="day-group">
+            <div class="day-head">
+              <span>📅 ${day} 赛后复盘（按当天赛前把握度从高到低）</span>
+              <span style="font-size:12px;font-weight:600;color:var(--accent);">
+                当日命中 <strong>${dHits}/${dayItems.length} (${dAcc}%)</strong>
+                ${dHigh.length ? ` · 高把握 ${dHighHits}/${dHigh.length}` : ''}
+                ${dProfit != null ? ` · 均注100元 <strong style="color:${dProfit>=0?'#4ade80':'#f87171'};">${dProfit>=0?'+':''}${dProfit.toFixed(1)}元</strong>` : ''}
+              </span>
+            </div>
+            ${dayItems.map((r, idx) => `
+              <div class="box">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;flex-wrap:wrap;">
+                  <div>
+                    <span class="lg-tag">No.${idx+1} · 把握 ${(r.confidence_score||0).toFixed(0)}分</span>
+                    <strong style="margin-left:6px;">[${r.league_name}] ${r.home_team_cn} ${r.actual_home_score}-${r.actual_away_score} ${r.away_team_cn}</strong>
+                  </div>
+                  <span style="font-size:12px;font-weight:700;color:${r.outcome_hit?'#4ade80':'#fbbf24'};">${attrZh[r.attribution_type]||r.attribution_type}</span>
+                </div>
+                <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">
+                  ${r.kickoff_bjt || ''} · 主推 ${OUT_ZH[r.recommended_outcome]}${r.used_odds ? ` @${r.used_odds}` : ''}
+                  ${r.flat_profit != null ? ` · 均注100元 <strong style="color:${r.flat_profit>=0?'#4ade80':'#f87171'};">${r.flat_profit>=0?'+':''}${r.flat_profit}元</strong>` : ''}
+                  · Top3: ${(r.top3_scores||[]).map(x=>x.score).join('/')} ${r.top3_score_hit?'🎯中Top3':''}
+                </div>
+                <div style="font-size:12px;">${r.root_cause_analysis}</div>
+                <div style="font-size:11px;color:var(--accent);margin-top:4px;">建议：${r.tuning_suggestion||'-'}</div>
+              </div>
+            `).join('')}
           </div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">
-            赛前把握度 ${(r.confidence_score||0).toFixed(0)}分 · 主推 ${OUT_ZH[r.recommended_outcome]} · Top3: ${(r.top3_scores||[]).map(x=>x.score).join('/')} ${r.top3_score_hit?'🎯中Top3':''}
-          </div>
-          <div style="font-size:12px;">${r.root_cause_analysis}</div>
-          <div style="font-size:11px;color:var(--accent);margin-top:4px;">建议：${r.tuning_suggestion||'-'}</div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     function renderBacktest() {

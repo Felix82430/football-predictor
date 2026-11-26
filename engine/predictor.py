@@ -260,6 +260,8 @@ def analyze_odds_trend(odds_history: List[Dict[str, Any]]) -> Dict[str, Any]:
             "market_prob_away": None,
             "trend_note": "暂无公开赔率快照（等待下次自动抓拍）",
             "abnormal_shift": False,
+            "dh": 0.0,
+            "da": 0.0,
         }
 
     first = odds_history[0]
@@ -280,6 +282,8 @@ def analyze_odds_trend(odds_history: List[Dict[str, Any]]) -> Dict[str, Any]:
             "market_prob_away": ma,
             "trend_note": note,
             "abnormal_shift": False,
+            "dh": 0.0,
+            "da": 0.0,
         }
 
     dh = round((mh - first["home_implied"]) * 100, 1)
@@ -304,6 +308,8 @@ def analyze_odds_trend(odds_history: List[Dict[str, Any]]) -> Dict[str, Any]:
         "market_prob_away": ma,
         "trend_note": note,
         "abnormal_shift": abnormal,
+        "dh": dh,
+        "da": da,
     }
 
 
@@ -312,20 +318,44 @@ def compute_traffic_light(
     market_probs: tuple[Optional[float], Optional[float], Optional[float]],
     has_strong_intel: bool,
     abnormal_odds_shift: bool,
+    odds_dh: float = 0.0,
+    odds_da: float = 0.0,
 ) -> tuple[str, str]:
-    """第三层：市场赔率红绿灯防偏体检（全大白话输出，让所有球迷一眼看懂）"""
+    """
+    第三层：市场赔率红绿灯防偏体检（v1.7 区分“同向过热”与“反向砸盘”）：
+    - 同向共振且市场比我方更坚定（如我方71% vs 市场84%）：不再误判为红灯！
+    - 资金逆着我方主推方向大幅砸盘（如临场隐含胜率暴跌>=5%）：立刻亮红灯预警！
+    """
     if any(x is None for x in market_probs):
         return "YELLOW", "暂时还没抓到全球主流赔率做对比，建议临开球前再看一眼最新变化。"
 
-    diffs = [abs(f - m) for f, m in zip(final_probs, market_probs)]  # type: ignore
+    m_probs = (float(market_probs[0]), float(market_probs[1]), float(market_probs[2]))
+    diffs = [abs(f - m) for f, m in zip(final_probs, m_probs)]
     max_diff = max(diffs)
     diff_pct = round(max_diff * 100, 1)
 
-    if abnormal_odds_shift and max_diff > MARKET_TRAFFIC_LIGHT["green_max_diff"]:
+    rec_idx = max(range(3), key=lambda i: final_probs[i])
+    mkt_idx = max(range(3), key=lambda i: m_probs[i])
+    same_direction = rec_idx == mkt_idx
+    market_more_bullish = same_direction and (m_probs[rec_idx] >= final_probs[rec_idx])
+
+    # 判断是否出现“反向砸盘”（市场临场资金逆着我方主推方向大跌 >= 5%）
+    reverse_shift = (rec_idx == 0 and odds_dh <= -5.0) or (rec_idx == 2 and odds_da <= -5.0)
+    if reverse_shift:
+        drop = abs(odds_dh if rec_idx == 0 else odds_da)
+        return "RED", f"⚠️ 临场资金逆向砸盘！我方主推方向隐含胜率从初盘暴跌 {drop:.1f}%，极可能有突发伤停或轮换，务必看首发别重注。"
+
+    if abnormal_odds_shift and not market_more_bullish and max_diff > MARKET_TRAFFIC_LIGHT["green_max_diff"]:
         return "RED", f"临场赔率突然大变，且和模型看法相差 {diff_pct}%！可能有突发伤病或大资金异动，一定要等赛前1小时看首发，别盲目重注。"
 
     if max_diff <= MARKET_TRAFFIC_LIGHT["green_max_diff"]:
         return "GREEN", f"数据模型和全球主流赔率看法高度一致（相差仅 {diff_pct}%），没有明显暗雷，参考价值高。"
+
+    # v1.7 核心修复：主推方向完全一致且市场比模型更看好（豪门偏热场景），不再误杀成红灯/重扣把握分
+    if market_more_bullish:
+        if max_diff <= 0.16:
+            return "GREEN", f"模型与主流赔率方向完全一致（市场更热，相差 {diff_pct}%），稳胆方向共识强，但回报偏低可留意让球/防平。"
+        return "YELLOW", f"模型与市场方向一致，但市场过热比模型高出 {diff_pct}%，警惕强队大热倒灶，稳妥可防平或看让球。"
 
     if max_diff <= MARKET_TRAFFIC_LIGHT["yellow_max_diff"]:
         if has_strong_intel:
@@ -658,6 +688,8 @@ def predict_match(
         ),
         has_strong_intel=has_strong_intel,
         abnormal_odds_shift=odds_analysis["abnormal_shift"],
+        odds_dh=odds_analysis.get("dh", 0.0),
+        odds_da=odds_analysis.get("da", 0.0),
     )
     if cross_league_anchored:
         traffic_note = f"（已结合跨联赛赔率校准）{traffic_note}"

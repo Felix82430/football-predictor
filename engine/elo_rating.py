@@ -179,7 +179,7 @@ def compute_rest_and_fatigue(
 def elo_to_expected_goals(
     home_elo: float,
     away_elo: float,
-    league_avg_goals: float = 2.58,
+    league_avg_goals: float = 2.42,
     home_adv_elo: float = 65.0,
 ) -> tuple[float, float]:
     """当欧冠遇到非五大联赛球队（无完整联赛CSV训练样本）时，通过 ELO 差值平滑映射基准预期进球"""
