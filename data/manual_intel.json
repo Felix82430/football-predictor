@@ -1,1 +1,32 @@
-{}
+{
+  "EPL_401879225": [
+    {
+      "category": "injuries_lineup",
+      "home_delta": -0.02,
+      "away_delta": -0.09,
+      "reason": "切尔西遭遇防线与中场伤病潮：队长里斯·詹姆斯、中卫拉克鲁瓦、哈托、若昂·佩德罗、吉滕斯确认缺阵，核心后腰凯塞多上轮伤退重大存疑；诺丁汉森林核心吉布斯-怀特、德拉普等主力齐整，仅多明格斯等2人缺阵。",
+      "source_name": "Evening Standard / SportsMole / OneFootball (2026-11-26)",
+      "source_url": "https://www.standard.co.uk"
+    }
+  ],
+  "BUNDESLIGA_401884720": [
+    {
+      "category": "injuries_lineup",
+      "home_delta": -0.05,
+      "away_delta": -0.06,
+      "reason": "双方均有多名主力减员：不来梅主力边锋格吕尔、中场施塔格、托普缺阵且魏泽尔/阿古存疑；门兴队长兼头号中锋克莱因丁斯特尚未达到首发条件，叠加莱奥波德与乌尔里希伤缺，两队进攻端均受损。",
+      "source_name": "Werder.de / Borussia.com / SportsMole (2026-11-26)",
+      "source_url": "https://www.sportsmole.co.uk"
+    }
+  ],
+  "EPL_401879226": [
+    {
+      "category": "injuries_lineup",
+      "home_delta": -0.04,
+      "away_delta": -0.06,
+      "reason": "曼联中锋谢什科与后腰巴莱巴/乌加特伤缺、拉什福德存疑，但中卫约罗红牌上诉成功解禁且库尼亚回归；布伦特福德头号前锋伊戈尔·蒂亚戈停赛，后防主力科林斯/亨利/希基长期缺阵，客场防线吃紧。",
+      "source_name": "SportsMole / Goal / TheSportsBank (2026-11-26)",
+      "source_url": "https://www.sportsmole.co.uk"
+    }
+  ]
+}

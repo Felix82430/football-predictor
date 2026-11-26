@@ -201,8 +201,28 @@ def api_list_matches(
         if r.get("prediction_id"):
             pred = get_latest_prediction(r["match_id"])
             r["confidence"] = compute_confidence_score(pred) if pred else None
+            if pred:
+                try:
+                    ni = json.loads(pred.get("news_injuries_json") or "{}")
+                    ev = json.loads(pred.get("value_ev_json") or "{}")
+                except Exception:
+                    ni, ev = {}, {}
+                r["injuries_count"] = len(ni.get("injuries") or [])
+                r["has_value_ev"] = bool(ev.get("best_value"))
+            else:
+                r["injuries_count"] = 0
+                r["has_value_ev"] = False
         else:
             r["confidence"] = None
+            r["injuries_count"] = 0
+            r["has_value_ev"] = False
+
+        with get_conn() as conn:
+            od = conn.execute(
+                "SELECT home_odds, draw_odds, away_odds FROM odds_snapshots WHERE match_id=? ORDER BY captured_at DESC LIMIT 1",
+                (r["match_id"],),
+            ).fetchone()
+        r["latest_odds"] = dict(od) if od else None
 
     if sort == "confidence":
         rows.sort(

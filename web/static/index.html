@@ -67,6 +67,19 @@
     }
     .st-btn:hover { color: var(--text); }
     .st-btn.active { background: #1d4ed8; color: #fff; }
+    .pool-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .pool-btn {
+      padding: 6px 13px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
+      background: var(--panel); border: 1px solid var(--border); color: var(--muted); transition: .15s;
+    }
+    .pool-btn:hover { color: var(--text); border-color: var(--accent); }
+    .pool-btn.active { background: rgba(56,189,248,.18); color: #fff; border-color: var(--accent); }
+    .pool-btn.active.val { background: rgba(34,197,94,.20); color: #4ade80; border-color: #22c55e; }
+    .pool-btn.active.banker { background: rgba(59,130,246,.22); color: #93c5fd; border-color: #3b82f6; }
+    .pool-btn.active.risk { background: rgba(239,68,68,.20); color: #f87171; border-color: #ef4444; }
+    .tag-val { background: rgba(34,197,94,.18); color: #4ade80; border: 1px solid rgba(34,197,94,.45); padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 700; }
+    .tag-banker { background: rgba(59,130,246,.20); color: #93c5fd; border: 1px solid rgba(59,130,246,.45); padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 700; }
+    .tag-inj { background: rgba(245,158,11,.18); color: #fbbf24; border: 1px solid rgba(245,158,11,.4); padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 700; }
     .day-banner {
       display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
       background: linear-gradient(90deg, rgba(56,189,248,.14), rgba(17,26,46,.95));
@@ -196,6 +209,12 @@
           <button class="btn btn-purple" onclick="pushDailyFeishu(this)">📲 推飞书今日简报</button>
         </div>
       </div>
+      <div class="pool-bar" id="poolBar">
+        <button class="pool-btn active" data-pool="ALL" onclick="setPool('ALL', this)">🔥 全部策略 <span id="pAll"></span></button>
+        <button class="pool-btn val" data-pool="VALUE" onclick="setPool('VALUE', this)">💎 价值单挑池(绿灯+高赔/正EV) <span id="pVal"></span></button>
+        <button class="pool-btn banker" data-pool="BANKER" onclick="setPool('BANKER', this)">🛡️ 串关稳胆池(绿灯≥75分) <span id="pBanker"></span></button>
+        <button class="pool-btn risk" data-pool="RISK" onclick="setPool('RISK', this)">⚠️ 高危避坑池 <span id="pRisk"></span></button>
+      </div>
       <div class="match-grid" id="matchGrid"></div>
     </div>
 
@@ -309,6 +328,7 @@
   <script>
     let currentLeague = 'ALL';
     let currentStatus = 'SCHEDULED';
+    let currentPool = 'ALL';
     let activeMatchId = null;
     let activeIntelItems = [];
 
@@ -396,21 +416,64 @@
       } catch (e) { console.error(e); }
     }
 
+    function setPool(pool, btn) {
+      currentPool = pool;
+      document.querySelectorAll('#poolBar .pool-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      loadMatches();
+    }
+
+    function getLocalPoolFlags(m) {
+      const conf = m.confidence;
+      if (!m.prediction_id || !conf) return { isValue: false, isBanker: false, isRisk: false, recOdds: null };
+      const sc = conf.score || 0;
+      const od = m.latest_odds || {};
+      const recOdds = m.recommended_outcome === 'H' ? od.home_odds : (m.recommended_outcome === 'D' ? od.draw_odds : od.away_odds);
+      const isValue = m.traffic_light === 'GREEN' && sc >= 55 && ((recOdds && recOdds >= 1.75) || !!m.has_value_ev);
+      const isBanker = m.traffic_light === 'GREEN' && sc >= 75;
+      const isRisk = m.traffic_light === 'RED' || (m.odds_trend_note || '').includes('异常变盘');
+      return { isValue, isBanker, isRisk, recOdds };
+    }
+
     async function loadMatches() {
       const status = currentStatus;
       const sort = document.getElementById('sortFilter') ? document.getElementById('sortFilter').value : 'confidence';
       const d = await api(`/api/matches?league=${currentLeague}&status=${status}&sort=${sort}&limit=100`);
       const grid = document.getElementById('matchGrid');
-      if (!d.items.length) {
-        grid.innerHTML = `<div class="box" style="grid-column:1/-1;text-align:center;color:var(--muted);">暂无符合条件的赛程，请先点击右上角「🔄 同步赛程+抓拍盘口」。</div>`;
+      const allItems = d.items || [];
+
+      let nVal = 0, nBanker = 0, nRisk = 0;
+      allItems.forEach(m => {
+        const f = getLocalPoolFlags(m);
+        if (f.isValue) nVal++;
+        if (f.isBanker) nBanker++;
+        if (f.isRisk) nRisk++;
+      });
+      if (document.getElementById('pAll')) document.getElementById('pAll').textContent = `(${allItems.length})`;
+      if (document.getElementById('pVal')) document.getElementById('pVal').textContent = `(${nVal})`;
+      if (document.getElementById('pBanker')) document.getElementById('pBanker').textContent = `(${nBanker})`;
+      if (document.getElementById('pRisk')) document.getElementById('pRisk').textContent = `(${nRisk})`;
+
+      const items = allItems.filter(m => {
+        if (currentPool === 'ALL') return true;
+        const f = getLocalPoolFlags(m);
+        if (currentPool === 'VALUE') return f.isValue;
+        if (currentPool === 'BANKER') return f.isBanker;
+        if (currentPool === 'RISK') return f.isRisk;
+        return true;
+      });
+
+      if (!items.length) {
+        grid.innerHTML = `<div class="box" style="grid-column:1/-1;text-align:center;color:var(--muted);">当前筛选下暂无比赛（可切换策略池或点击「🔄 同步赛程+抓拍盘口」）。</div>`;
         return;
       }
       const outMap = { H: '主胜', D: '平局', A: '客胜' };
       const lightMap = { GREEN: '🟢 稳健一致', YELLOW: '🟡 留意冷门/价值', RED: '🔴 高警分歧' };
 
-      grid.innerHTML = d.items.map((m, idx) => {
+      grid.innerHTML = items.map((m, idx) => {
         const hasPred = !!m.prediction_id;
         const conf = m.confidence;
+        const flags = getLocalPoolFlags(m);
         const ph = hasPred ? (m.final_prob_home * 100).toFixed(1) : 0;
         const pd = hasPred ? (m.final_prob_draw * 100).toFixed(1) : 0;
         const pa = hasPred ? (m.final_prob_away * 100).toFixed(1) : 0;
@@ -420,7 +483,7 @@
         const lockTag = m.pred_locked ? '<span style="color:#38bdf8;font-weight:700;">🔒已锁盘</span>' : '';
         const rankBadge = (hasPred && conf)
           ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:5px 9px;border-radius:8px;background:rgba(56,189,248,.10);border:1px solid rgba(56,189,248,.25);font-size:12px;">
-               <span><strong style="color:#38bdf8;">${sort==='confidence' ? `No.${idx+1} ` : ''}${conf.stars}</strong> 把握度 <strong>${conf.score.toFixed(0)}分</strong></span>
+               <span><strong style="color:#38bdf8;">${sort==='confidence' ? `No.${idx+1} ` : ''}${conf.stars}</strong> 把握度 <strong>${conf.score.toFixed(0)}分</strong> ${flags.isValue ? '<span class="tag-val">💎价值单挑</span>' : ''} ${flags.isBanker ? '<span class="tag-banker">🛡️稳胆</span>' : ''}</span>
                <span style="color:var(--muted);">${conf.tier}</span>
              </div>`
           : '';
@@ -445,11 +508,12 @@
               </div>
               <div class="prob-labels">
                 <span>主胜 ${ph}%</span>
-                <span>平 ${pd}% · 主推 <strong style="color:#fff;">${outMap[m.recommended_outcome]}</strong></span>
+                <span>平 ${pd}% · 主推 <strong style="color:#fff;">${outMap[m.recommended_outcome]}${flags.recOdds ? ` @${Number(flags.recOdds).toFixed(2)}` : ''}</strong></span>
                 <span>客胜 ${pa}%</span>
               </div>
               <div class="top3-row">
                 <span style="font-size:12px;color:var(--muted);">Top3比分：</span>${top3Html}
+                ${m.injuries_count > 0 ? `<span class="tag-inj">🏥 伤停${m.injuries_count}人</span>` : ''}
               </div>
               <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
                 <span>预期进球 ${Number(m.final_home_xg).toFixed(2)} : ${Number(m.final_away_xg).toFixed(2)}</span>
