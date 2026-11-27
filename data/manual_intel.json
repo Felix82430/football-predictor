@@ -3,10 +3,10 @@
     {
       "category": "injuries_lineup",
       "home_delta": -0.02,
-      "away_delta": -0.09,
-      "reason": "切尔西遭遇防线与中场伤病潮：队长里斯·詹姆斯、中卫拉克鲁瓦、哈托、若昂·佩德罗、吉滕斯确认缺阵，核心后腰凯塞多上轮伤退重大存疑；诺丁汉森林核心吉布斯-怀特、德拉普等主力齐整，仅多明格斯等2人缺阵。",
-      "source_name": "Evening Standard / SportsMole / OneFootball (2026-11-26)",
-      "source_url": "https://www.standard.co.uk"
+      "away_delta": -0.05,
+      "reason": "11月26日赛前发布会最新确认：切尔西主帅阿隆索官宣核心后腰凯塞多恢复合练可出战，中场危机缓解；但队长里斯·詹姆斯、中卫拉克鲁瓦、哈托、若昂·佩德罗、吉滕斯仍缺阵。诺丁汉森林主力齐整，仅多明格斯与萨沃纳缺阵。",
+      "source_name": "ChelseaFC.com / SportsMole / Evening Standard (2026-11-27)",
+      "source_url": "https://www.chelseafc.com"
     }
   ],
   "BUNDESLIGA_401884720": [
@@ -16,6 +16,36 @@
       "away_delta": -0.06,
       "reason": "双方均有多名主力减员：不来梅主力边锋格吕尔、中场施塔格、托普缺阵且魏泽尔/阿古存疑；门兴队长兼头号中锋克莱因丁斯特尚未达到首发条件，叠加莱奥波德与乌尔里希伤缺，两队进攻端均受损。",
       "source_name": "Werder.de / Borussia.com / SportsMole (2026-11-26)",
+      "source_url": "https://www.sportsmole.co.uk"
+    }
+  ],
+  "LALIGA_401882791": [
+    {
+      "category": "injuries_lineup",
+      "home_delta": -0.06,
+      "away_delta": -0.02,
+      "reason": "莱万特上轮德比连伤双主力边卫托利安（大概率缺阵）与马努·桑切斯（存疑），且联赛已5轮不胜排第15-17名；桑坦德竞技高居第7名、刚3-2力克皇社，租将射手扎比里13场狂轰11球，虽缺中卫曼蒂利亚但进攻火力凶猛。",
+      "source_name": "SportsMole / TheStatsZone / Forebet (2026-11-27)",
+      "source_url": "https://www.sportsmole.co.uk"
+    }
+  ],
+  "SERIEA_401875004": [
+    {
+      "category": "injuries_lineup",
+      "home_delta": -0.06,
+      "away_delta": 0.02,
+      "reason": "威尼斯意甲垫底且12轮仅进8球火力最差，刚0-4惨败尤文，叠加科雷亚、巴希奇、马佐基、斯韦尔科等多名防守/中场伤停；博洛尼亚在帕拉迪诺率领下客场4连胜且场均进2球以上，仅霍尔姆/米兰达微伤，冲欧战意强烈。",
+      "source_name": "SportsMole / TheStatsZone / Flashscore (2026-11-27)",
+      "source_url": "https://www.sportsmole.co.uk"
+    }
+  ],
+  "LIGUE1_401876392": [
+    {
+      "category": "injuries_lineup",
+      "home_delta": -0.06,
+      "away_delta": 0.08,
+      "reason": "布雷斯特后防队长夏尔多内、杜姆比亚、勒冈伤缺且主力右卫拉拉存疑；黑马巴黎FC高居法甲第2仅落后大巴黎3分，全员健康且3连胜刚4-0大胜昂热，今年5月上回合交锋曾4-0完胜布雷斯特。",
+      "source_name": "SportsMole / TheStatsZone / OneFootball (2026-11-27)",
       "source_url": "https://www.sportsmole.co.uk"
     }
   ],
