@@ -37,7 +37,7 @@
     .parlay-wrap { background: linear-gradient(135deg, rgba(17,26,46,.96), rgba(23,35,61,.92)); border: 1px solid rgba(56,189,248,.32); border-radius: 12px; padding: 13px 16px; margin-bottom: 14px; }
     .parlay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 10px; }
     .parlay-card { background: rgba(11,17,32,.78); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
-    .parlay-leg { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; background: rgba(23,35,61,.65); margin-bottom: 5px; font-size: 12px; cursor: pointer; }
+    .parlay-leg { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border-radius: 7px; background: rgba(23,35,61,.65); margin-bottom: 5px; font-size: 12px; cursor: pointer; }
     .parlay-leg:hover { outline: 1px solid var(--accent); }
     .parlay-warn { margin-top: 6px; padding: 6px 8px; border-radius: 7px; font-size: 11px; line-height: 1.45; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); color: #fbbf24; }
     .parlay-ok { margin-top: 6px; padding: 5px 8px; border-radius: 7px; font-size: 11px; background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.32); color: #4ade80; }
@@ -526,7 +526,7 @@
 
       const fmtLeg = (x, useDc) => `
         <div class="parlay-leg" onclick="openDetail('${x.m.match_id}')">
-          <div><span class="league-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">${x.m.traffic_light==='GREEN'?'🟢':'🟡'}${x.sc.toFixed(0)}分</span></div>
+          <div><span class="league-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">北京时间 ${(x.m.kickoff_bjt||'').slice(5)} · ${x.m.traffic_light==='GREEN'?'🟢':'🟡'}${x.sc.toFixed(0)}分</span></div>
           <div><strong style="color:${useDc?'#38bdf8':'#4ade80'};">${useDc ? x.dcSide : outMap[x.rec] + ' @' + Number(x.f.recOdds).toFixed(2)}</strong> <span style="color:var(--muted);">(${((useDc?x.dcProb:x.recProb)*100).toFixed(0)}%)</span></div>
         </div>`;
 
@@ -579,7 +579,7 @@
 
       const scoreSorted = cands.filter(x => x.top3.length >= 3 && x.totXg > 0)
         .sort((a, b) => ((b.totXg <= 2.85 && b.top3Sum >= 0.32) ? 1 : 0) - ((a.totXg <= 2.85 && a.top3Sum >= 0.32) ? 1 : 0) || b.top3Sum - a.top3Sum);
-      const fmtScLeg = (x) => `<div class="parlay-leg" onclick="openDetail('${x.m.match_id}')"><div><span class="league-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);">总球(xG) ${x.totXg.toFixed(2)}</span></div><div>${x.top3.map((t,i)=>`<span class="score-chip" style="${i===0?'border-color:#c084fc;':''}"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join(' ')} <strong style="color:#c084fc;">合${(x.top3Sum*100).toFixed(0)}%</strong></div></div>`;
+      const fmtScLeg = (x) => `<div class="parlay-leg" onclick="openDetail('${x.m.match_id}')"><div><span class="league-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);">北京时间 ${(x.m.kickoff_bjt||'').slice(5)} · 总球(xG) ${x.totXg.toFixed(2)}</span></div><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${x.top3.map((t,i)=>`<span class="score-chip" style="${i===0?'border-color:#c084fc;':''}"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join('')} <strong style="color:#c084fc;">合${(x.top3Sum*100).toFixed(0)}%</strong></div></div>`;
 
       if (scoreSorted.length >= 2) {
         const legs = scoreSorted.slice(0, 2);

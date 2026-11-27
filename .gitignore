@@ -8,3 +8,5 @@ data/settings.json
 data/cache/
 data/*.db-wal
 data/*.db-shm
+data/cloud_trigger.log
+data/trigger_state.json

@@ -216,7 +216,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     }
     .parlay-title { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 800; margin-bottom: 6px; gap: 6px; flex-wrap: wrap; }
     .parlay-leg {
-      display: flex; justify-content: space-between; align-items: center; gap: 6px;
+      display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;
       padding: 5px 7px; border-radius: 7px; background: rgba(23,35,61,.65); margin-bottom: 5px; font-size: 12px; cursor: pointer;
     }
     .parlay-leg:hover { border: 1px solid var(--accent); padding: 4px 6px; }
@@ -426,7 +426,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       </div>
       <div class="parlay-wrap" id="parlayWrap">
         <div class="parlay-head">
-          <div style="font-size:14px;font-weight:800;color:#fff;">🧩 智能配串参考（2串1 · 3串1 · 4串1）& 🎯 比分波胆串 <span style="font-size:11px;font-weight:500;color:var(--muted);">（把握不足会明说绝不硬凑，点击场次看详情）</span></div>
+          <div style="font-size:14px;font-weight:800;color:#fff;">🧩 智能配串参考（2串1 · 3串1 · 4串1）& 🎯 比分波胆串 <span style="font-size:11px;font-weight:500;color:var(--muted);">（以下比赛时间均为北京时间 · 把握不足会明说绝不硬凑）</span></div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <button class="scope-btn active" data-scope="ALL" onclick="setParlayScope('ALL', this)">🗓️ 本轮全部未开赛</button>
             <button class="scope-btn" data-scope="DAY" onclick="setParlayScope('DAY', this)">📅 仅看今明24小时</button>
@@ -708,7 +708,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
 
       const fmtLeg = (x, useDc = false) => `
         <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
-          <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">${(x.m.kickoff_bjt||'').slice(5)} · ${x.p.traffic_light==='GREEN'?'🟢':'🟡'}${x.sc.toFixed(0)}分</span></div>
+          <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">北京时间 ${(x.m.kickoff_bjt||'').slice(5)} · ${x.p.traffic_light==='GREEN'?'🟢':'🟡'}${x.sc.toFixed(0)}分</span></div>
           <div style="text-align:right;white-space:nowrap;">
             <strong style="color:${useDc ? '#38bdf8' : '#4ade80'};">${useDc ? x.dcSide : OUT_ZH[x.rec] + (x.f.recOdds ? ' @' + Number(x.f.recOdds).toFixed(2) : '')}</strong>
             <span style="color:var(--muted);font-size:11px;"> (${((useDc ? x.dcProb : x.recProb)*100).toFixed(0)}%)</span>
@@ -829,10 +829,10 @@ MOBILE_HTML = r"""<!DOCTYPE html>
         <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
           <div>
             <span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong>
-            <span style="color:var(--muted);font-size:11px;">预计总球(xG) ${x.totXg.toFixed(2)}</span>
+            <span style="color:var(--muted);font-size:11px;">北京时间 ${(x.m.kickoff_bjt||'').slice(5)} · 预计总球(xG) ${x.totXg.toFixed(2)}</span>
           </div>
-          <div style="text-align:right;white-space:nowrap;">
-            ${x.top3.map((t, i) => `<span class="pill" style="${i===0?'border-color:#c084fc;':''}"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join(' ')}
+          <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+            ${x.top3.map((t, i) => `<span class="pill" style="${i===0?'border-color:#c084fc;':''}"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join('')}
             <span style="color:#c084fc;font-size:11px;font-weight:700;">合${(x.top3Sum*100).toFixed(0)}%</span>
           </div>
         </div>`;
@@ -1024,7 +1024,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
                 <span style="color:var(--muted);font-size:11px;">${c.tier}</span>
               </div>` : ''}
             <div class="mc-meta">
-              <div><span class="lg-tag">${m.league_name}</span> &nbsp;${m.kickoff_bjt} ${p && p.is_locked ? '<span style="color:#38bdf8;font-weight:700;">🔒锁盘</span>' : ''}</div>
+              <div><span class="lg-tag">${m.league_name}</span> &nbsp;北京时间 ${m.kickoff_bjt} ${p && p.is_locked ? '<span style="color:#38bdf8;font-weight:700;">🔒锁盘</span>' : ''}</div>
               <div>${p ? `<span class="light-${p.traffic_light}">${LIGHT_ZH[p.traffic_light] || ''}</span>` : '<span style="color:var(--muted);">待云端更新</span>'}</div>
             </div>
             <div class="teams">
