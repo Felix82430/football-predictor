@@ -220,6 +220,19 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       padding: 5px 7px; border-radius: 7px; background: rgba(23,35,61,.65); margin-bottom: 5px; font-size: 12px; cursor: pointer;
     }
     .parlay-leg:hover { border: 1px solid var(--accent); padding: 4px 6px; }
+    .parlay-warn {
+      margin-top: 6px; padding: 6px 8px; border-radius: 7px; font-size: 11px; line-height: 1.45;
+      background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); color: #fbbf24;
+    }
+    .parlay-ok {
+      margin-top: 6px; padding: 5px 8px; border-radius: 7px; font-size: 11px;
+      background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.32); color: #4ade80;
+    }
+    .scope-btn {
+      background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .scope-btn.active { background: #1d4ed8; color: #fff; border-color: #3b82f6; }
     .toast {
       position: fixed; bottom: 72px; right: 16px; z-index: 150; max-width: min(380px, 92vw);
       background: #1e293b; border: 1px solid var(--accent); color: #fff; font-size: 12px;
@@ -413,8 +426,12 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       </div>
       <div class="parlay-wrap" id="parlayWrap">
         <div class="parlay-head">
-          <div style="font-size:14px;font-weight:800;color:#fff;">🧩 智能配串参考（2串1 · 3串1）& 🎯 波胆精选 <span style="font-size:11px;font-weight:500;color:var(--muted);">（自动踢掉红灯/看法打架/1.25以下超低赔，点击场次看详情）</span></div>
-          <button class="btn" style="padding:3px 9px;font-size:11px;" onclick="toggleParlay(this)">收起</button>
+          <div style="font-size:14px;font-weight:800;color:#fff;">🧩 智能配串参考（2串1 · 3串1 · 4串1）& 🎯 比分波胆串 <span style="font-size:11px;font-weight:500;color:var(--muted);">（把握不足会明说绝不硬凑，点击场次看详情）</span></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <button class="scope-btn active" data-scope="ALL" onclick="setParlayScope('ALL', this)">🗓️ 本轮全部未开赛</button>
+            <button class="scope-btn" data-scope="DAY" onclick="setParlayScope('DAY', this)">📅 仅看今明24小时</button>
+            <button class="btn" style="padding:3px 9px;font-size:11px;" onclick="toggleParlay(this)">收起</button>
+          </div>
         </div>
         <div class="parlay-grid" id="parlayGrid"></div>
       </div>
@@ -499,8 +516,16 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     let curLg = 'ALL';
     let curStatus = 'SCHEDULED';
     let curPool = 'ALL';
+    let curParlayScope = 'ALL';
     const OUT_ZH = { H: '主胜', D: '平局', A: '客胜' };
     const LIGHT_ZH = { GREEN: '🟢 稳健一致', YELLOW: '🟡 留意分歧', RED: '🔴 高危红灯' };
+
+    function setParlayScope(sc, btn) {
+      curParlayScope = sc;
+      document.querySelectorAll('.scope-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      renderParlays();
+    }
 
     function getMatchOddsForRec(m) {
       const p = m.prediction;
@@ -639,9 +664,20 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       const grid = document.getElementById('parlayGrid');
       if (!DATA || !wrap || !grid) return;
 
-      // 仅针对未开赛且已出预测的比赛生成配串与波胆精选
+      const nowMs = Date.now();
+      const scopeLabel = curParlayScope === 'DAY' ? '今明24小时内' : '本轮';
+
+      // 仅针对未开赛且已出预测的比赛生成配串与比分波胆串
       const cands = DATA.matches
-        .filter(m => m.status === 'SCHEDULED' && m.prediction && m.prediction.confidence && (curLg === 'ALL' || m.league_code === curLg))
+        .filter(m => {
+          if (m.status !== 'SCHEDULED' || !m.prediction || !m.prediction.confidence) return false;
+          if (curLg !== 'ALL' && m.league_code !== curLg) return false;
+          if (curParlayScope === 'DAY' && m.kickoff_utc) {
+            const diffH = (Date.parse(m.kickoff_utc) - nowMs) / 3600000;
+            if (isNaN(diffH) || diffH < -0.5 || diffH > 28) return false;
+          }
+          return true;
+        })
         .map(m => {
           const p = m.prediction;
           const f = getMatchPoolFlags(m);
@@ -653,7 +689,12 @@ MOBILE_HTML = r"""<!DOCTYPE html>
           const dcProb = p.final_prob_home >= p.final_prob_away ? (dc['1X'] || 0) : (dc['X2'] || 0);
           const tNote = p.traffic_note || '';
           const isConflict = tNote.includes('看法') && tNote.includes('打架');
-          return { m, p, f, sc, rec, recProb, dcSide, dcProb, isConflict };
+          const totXg = (p.final_home_xg || 0) + (p.final_away_xg || 0);
+          const top3 = p.top3_scores || [];
+          const top1Prob = top3[0] ? (top3[0].prob || 0) : 0;
+          const top2Sum = top3.slice(0, 2).reduce((s, x) => s + (x.prob || 0), 0);
+          const top3Sum = top3.reduce((s, x) => s + (x.prob || 0), 0);
+          return { m, p, f, sc, rec, recProb, dcSide, dcProb, isConflict, totXg, top3, top1Prob, top2Sum, top3Sum };
         })
         .filter(x => x.p.traffic_light !== 'RED' && !x.isConflict);
 
@@ -663,36 +704,51 @@ MOBILE_HTML = r"""<!DOCTYPE html>
         .sort((a, b) => (b.p.traffic_light === 'GREEN' ? 1 : 0) - (a.p.traffic_light === 'GREEN' ? 1 : 0) || b.sc - a.sc);
 
       const greenOnly = cleanStraight.filter(x => x.p.traffic_light === 'GREEN');
-      const basePool = greenOnly.length >= 2 ? greenOnly : cleanStraight;
-
       const cards = [];
+
       const fmtLeg = (x, useDc = false) => `
         <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
-          <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">${(x.m.kickoff_bjt||'').slice(5)}</span></div>
+          <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">${(x.m.kickoff_bjt||'').slice(5)} · ${x.p.traffic_light==='GREEN'?'🟢':'🟡'}${x.sc.toFixed(0)}分</span></div>
           <div style="text-align:right;white-space:nowrap;">
             <strong style="color:${useDc ? '#38bdf8' : '#4ade80'};">${useDc ? x.dcSide : OUT_ZH[x.rec] + (x.f.recOdds ? ' @' + Number(x.f.recOdds).toFixed(2) : '')}</strong>
             <span style="color:var(--muted);font-size:11px;"> (${((useDc ? x.dcProb : x.recProb)*100).toFixed(0)}%)</span>
           </div>
         </div>`;
 
+      const evalStraightNote = (legs, nName, minGoodScore = 68) => {
+        const allGreen = legs.every(x => x.p.traffic_light === 'GREEN');
+        const minSc = Math.min(...legs.map(x => x.sc));
+        if (allGreen && minSc >= minGoodScore) {
+          return `<div class="parlay-ok">✅ 质量达标：全部为🟢绿灯高把握场次（最低 ${minSc.toFixed(0)} 分），可重点参考${nName==='4串1' ? '（4串1容错率低，仍建议轻仓娱乐）' : ''}。</div>`;
+        }
+        const reasons = [];
+        if (!allGreen) reasons.push('包含🟡黄灯分歧场');
+        if (minSc < minGoodScore) reasons.push(`最低场把握仅 ${minSc.toFixed(0)} 分`);
+        return `<div class="parlay-warn">⚠️ 实话提醒：${scopeLabel}没有特别有把握的 ${nName}（${reasons.join('、')}），以上为次优备选，不建议重注，优先缩成 2串1 或看防冷双选！</div>`;
+      };
+
       // 1. 稳健 2串1
-      if (basePool.length >= 2) {
-        const legs = basePool.slice(0, 2);
+      if (cleanStraight.length >= 2) {
+        const legs = (greenOnly.length >= 2 ? greenOnly : cleanStraight).slice(0, 2);
         const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
         const prob = legs.reduce((a, x) => a * x.recProb, 1);
         cards.push(`
           <div class="parlay-card">
             <div class="parlay-title">
-              <span style="color:#93c5fd;">🛡️ 稳健 2 串 1（高把握直串）</span>
-              <span class="pill">参考赔率 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+              <span style="color:#93c5fd;">🛡️ 稳健 2 串 1（首选黄金串）</span>
+              <span class="pill">约 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
             </div>
             ${legs.map(x => fmtLeg(x, false)).join('')}
+            ${evalStraightNote(legs, '2串1', 68)}
           </div>`);
+      } else {
+        cards.push(`<div class="parlay-card"><div class="parlay-title"><span style="color:#93c5fd;">🛡️ 稳健 2 串 1</span></div><div class="parlay-warn">⚠️ ${scopeLabel}合格场次不足 2 场，暂无特别有把握的 2 串 1，建议观望或改看「本轮全部未开赛」。</div></div>`);
       }
 
       // 2. 稳带搏 2串1（1稳胆 + 1高赔价值单）
-      const banker1 = basePool.find(x => x.f.recOdds >= 1.30 && x.f.recOdds < 1.75) || basePool[0];
-      const value1 = basePool.find(x => banker1 && x.m.match_id !== banker1.m.match_id && x.f.recOdds >= 1.75);
+      const vPool = greenOnly.length >= 2 ? greenOnly : cleanStraight;
+      const banker1 = vPool.find(x => x.f.recOdds >= 1.30 && x.f.recOdds < 1.75) || vPool[0];
+      const value1 = vPool.find(x => banker1 && x.m.match_id !== banker1.m.match_id && x.f.recOdds >= 1.75);
       if (banker1 && value1) {
         const legs = [banker1, value1];
         const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
@@ -701,28 +757,50 @@ MOBILE_HTML = r"""<!DOCTYPE html>
           <div class="parlay-card">
             <div class="parlay-title">
               <span style="color:#4ade80;">💎 稳带搏 2 串 1（1稳胆 + 1高赔价值）</span>
-              <span class="pill">参考赔率 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+              <span class="pill">约 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
             </div>
             ${legs.map(x => fmtLeg(x, false)).join('')}
+            ${evalStraightNote(legs, '稳带搏2串1', 60)}
           </div>`);
       }
 
       // 3. 稳健 3串1
-      if (basePool.length >= 3) {
-        const legs = basePool.slice(0, 3);
+      if (cleanStraight.length >= 3) {
+        const legs = (greenOnly.length >= 3 ? greenOnly : cleanStraight).slice(0, 3);
         const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
         const prob = legs.reduce((a, x) => a * x.recProb, 1);
         cards.push(`
           <div class="parlay-card">
             <div class="parlay-title">
-              <span style="color:#38bdf8;">🔥 稳健 3 串 1（精选 3 场绿灯高把握）</span>
-              <span class="pill">参考赔率 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+              <span style="color:#38bdf8;">🔥 稳健 3 串 1（3场精选直串）</span>
+              <span class="pill">约 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
             </div>
             ${legs.map(x => fmtLeg(x, false)).join('')}
+            ${evalStraightNote(legs, '3串1', 68)}
           </div>`);
+      } else {
+        cards.push(`<div class="parlay-card"><div class="parlay-title"><span style="color:#38bdf8;">🔥 稳健 3 串 1</span></div><div class="parlay-warn">⚠️ ${scopeLabel}没有凑够 3 场稳健绿灯赛程，宁缺毋滥，建议只玩 2 串 1 或防冷双选。</div></div>`);
       }
 
-      // 4. 防冷双选 3串1（专治平局，实盘双选命中率94%+思路）
+      // 4. 稳健 4串1（严格带把握度体检与防坑说明）
+      if (cleanStraight.length >= 4) {
+        const legs = (greenOnly.length >= 4 ? greenOnly : cleanStraight).slice(0, 4);
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`
+          <div class="parlay-card">
+            <div class="parlay-title">
+              <span style="color:#60a5fa;">⚡ 稳健 4 串 1（高倍进阶 · 轻仓）</span>
+              <span class="pill">约 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+            </div>
+            ${legs.map(x => fmtLeg(x, false)).join('')}
+            ${evalStraightNote(legs, '4串1', 70)}
+          </div>`);
+      } else {
+        cards.push(`<div class="parlay-card"><div class="parlay-title"><span style="color:#60a5fa;">⚡ 稳健 4 串 1</span></div><div class="parlay-warn">⚠️ ${scopeLabel}仅有 ${cleanStraight.length} 场合格比赛，凑不够 4 场有把握的串，强烈建议别硬凑 4 串 1，改看 2 串 1 即可！</div></div>`);
+      }
+
+      // 5. 防冷双选 3串1（专治平局，实盘双选命中率94%+思路）
       const dcPool = cands.filter(x => x.dcProb >= 0.68).sort((a, b) => (b.p.traffic_light === 'GREEN' ? 1 : 0) - (a.p.traffic_light === 'GREEN' ? 1 : 0) || b.dcProb - a.dcProb);
       if (dcPool.length >= 3) {
         const legs = dcPool.slice(0, 3);
@@ -734,32 +812,70 @@ MOBILE_HTML = r"""<!DOCTYPE html>
               <span class="pill">联合防冷概率 <strong>${(prob*100).toFixed(0)}%</strong></span>
             </div>
             ${legs.map(x => fmtLeg(x, true)).join('')}
+            <div class="parlay-ok">✅ 稳妥抗冷思路：每场均覆盖胜+平（或平+负），专治 1-1 / 2-2 平局坑。</div>
           </div>`);
       }
 
-      // 5. 今日波胆精选（低总进球密集局）
-      const bodanList = cands.filter(x => x.f.isBodan).sort((a, b) => b.f.top3Sum - a.f.top3Sum).slice(0, 3);
-      if (bodanList.length) {
+      // 6. 🎯 比分波胆 2串1 & 3串1（延续“挑低总进球 + 3比分小包围”推荐方式）
+      const scoreSorted = cands
+        .filter(x => x.top3.length >= 3 && x.totXg > 0)
+        .sort((a, b) => {
+          const aGood = (a.totXg <= 2.85 && a.top3Sum >= 0.32) ? 1 : 0;
+          const bGood = (b.totXg <= 2.85 && b.top3Sum >= 0.32) ? 1 : 0;
+          return bGood - aGood || b.top3Sum - a.top3Sum;
+        });
+
+      const fmtScoreLeg = (x) => `
+        <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
+          <div>
+            <span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong>
+            <span style="color:var(--muted);font-size:11px;">预计总球(xG) ${x.totXg.toFixed(2)}</span>
+          </div>
+          <div style="text-align:right;white-space:nowrap;">
+            ${x.top3.map((t, i) => `<span class="pill" style="${i===0?'border-color:#c084fc;':''}"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join(' ')}
+            <span style="color:#c084fc;font-size:11px;font-weight:700;">合${(x.top3Sum*100).toFixed(0)}%</span>
+          </div>
+        </div>`;
+
+      // 6A. 比分波胆 2串1
+      if (scoreSorted.length >= 2) {
+        const legs = scoreSorted.slice(0, 2);
+        const p1 = legs.reduce((a, x) => a * x.top1Prob, 1);
+        const p3 = legs.reduce((a, x) => a * x.top3Sum, 1);
+        const strictOk = legs.every(x => x.totXg <= 2.85 && x.top3Sum >= 0.32);
+        cards.push(`
+          <div class="parlay-card">
+            <div class="parlay-title">
+              <span style="color:#c084fc;">🎯 比分波胆 2 串 1（3比分小包围）</span>
+              <span class="pill">3×3包围(9注)命中 <strong>${(p3*100).toFixed(1)}%</strong> · 首选直串 ${(p1*100).toFixed(1)}%</span>
+            </div>
+            ${legs.map(fmtScoreLeg).join('')}
+            ${strictOk
+              ? `<div class="parlay-ok">✅ 两场均属低进球密集局：建议用「3×3=9注」小包围娱乐（赔率通常 40~70 倍），轻仓以小博大。</div>`
+              : `<div class="parlay-warn">⚠️ 实话提醒：${scopeLabel}仅 ${legs.filter(x=>x.totXg<=2.85&&x.top3Sum>=0.32).length}/2 场达到黄金低比分标准，其余场次比分偏散；波胆 2串1 无特别有把握组合，建议只单买第 1 场 3 比分小包围或极小额娱乐！</div>`}
+          </div>`);
+      }
+
+      // 6B. 比分波胆 3串1
+      if (scoreSorted.length >= 3) {
+        const legs = scoreSorted.slice(0, 3);
+        const p1 = legs.reduce((a, x) => a * x.top1Prob, 1);
+        const p2 = legs.reduce((a, x) => a * x.top2Sum, 1);
+        const p3 = legs.reduce((a, x) => a * x.top3Sum, 1);
+        const goodCnt = legs.filter(x => x.totXg <= 2.85 && x.top3Sum >= 0.32).length;
         cards.push(`
           <div class="parlay-card" style="grid-column:1/-1;">
             <div class="parlay-title">
-              <span style="color:#c084fc;">🎯 今日波胆精选（预计进球偏低 + 前3比分最集中，适合3比分娱乐小包围）</span>
-              <span style="font-size:11px;color:var(--muted);">轻仓娱乐为主</span>
+              <span style="color:#e879f9;">🎰 比分波胆 3 串 1（高倍彩蛋 · 前2比分2×2×2=8注复式）</span>
+              <span class="pill">2×2×2(8注)命中 <strong>${(p2*100).toFixed(1)}%</strong> · 3×3×3(27注) ${(p3*100).toFixed(1)}% · 首选直串 ${(p1*100).toFixed(2)}%</span>
             </div>
-            ${bodanList.map(x => `
-              <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
-                <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">预计总球(xG) ${(x.p.final_home_xg+x.p.final_away_xg).toFixed(2)}</span></div>
-                <div style="text-align:right;">
-                  ${(x.p.top3_scores||[]).map(t => `<span class="pill"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join(' ')}
-                  <span style="color:#c084fc;font-weight:700;font-size:11px;margin-left:4px;">合计 ${(x.f.top3Sum*100).toFixed(0)}%</span>
-                </div>
-              </div>
-            `).join('')}
+            ${legs.map(fmtScoreLeg).join('')}
+            <div class="parlay-warn">⚠️ 理性风控提醒：${goodCnt<3 ? `${scopeLabel}仅 ${goodCnt}/3 场属于黄金低比分密集局，暂无特别有把握的比分 3 串 1；` : ''}比分 3 串 1 本身属于百里挑一的高倍彩票彩蛋（首选直串命中仅 ${(p1*100).toFixed(2)}%），如要娱乐建议只用每场前 2 个比分做 8 注极小额尝试，切忌重注！</div>
           </div>`);
       }
 
       if (!cards.length) {
-        grid.innerHTML = `<div style="font-size:12px;color:var(--muted);">当前筛选下暂无足够未开赛绿灯场次生成配串（切换“全部”联赛可查看全站配串）。</div>`;
+        grid.innerHTML = `<div style="font-size:12px;color:var(--muted);">当前筛选下暂无未开赛预测场次，请切换「本轮全部未开赛」或“全部”联赛查看。</div>`;
       } else {
         grid.innerHTML = cards.join('');
       }
