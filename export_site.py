@@ -198,6 +198,33 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     .head-top { max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
     .brand { font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .upd-tag { font-size: 11px; font-weight: 600; color: var(--accent); background: rgba(56,189,248,.12); padding: 2px 9px; border-radius: 999px; border: 1px solid rgba(56,189,248,.28); }
+    .upd-btn {
+      font-size: 11px; font-weight: 700; color: #fff; background: #1d4ed8;
+      border: 1px solid #3b82f6; border-radius: 999px; padding: 3px 10px; cursor: pointer; transition: .15s;
+    }
+    .upd-btn:hover { background: #2563eb; }
+    .upd-btn:disabled { opacity: .6; cursor: wait; }
+    .parlay-wrap {
+      background: linear-gradient(135deg, rgba(17,26,46,.96), rgba(23,35,61,.92));
+      border: 1px solid rgba(56,189,248,.32); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+    }
+    .parlay-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .parlay-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    @media (min-width: 760px) { .parlay-grid { grid-template-columns: repeat(2, 1fr); } }
+    .parlay-card {
+      background: rgba(11,17,32,.78); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    }
+    .parlay-title { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 800; margin-bottom: 6px; gap: 6px; flex-wrap: wrap; }
+    .parlay-leg {
+      display: flex; justify-content: space-between; align-items: center; gap: 6px;
+      padding: 5px 7px; border-radius: 7px; background: rgba(23,35,61,.65); margin-bottom: 5px; font-size: 12px; cursor: pointer;
+    }
+    .parlay-leg:hover { border: 1px solid var(--accent); padding: 4px 6px; }
+    .toast {
+      position: fixed; bottom: 72px; right: 16px; z-index: 150; max-width: min(380px, 92vw);
+      background: #1e293b; border: 1px solid var(--accent); color: #fff; font-size: 12px;
+      padding: 10px 14px; border-radius: 10px; display: none; box-shadow: 0 10px 28px rgba(0,0,0,.5);
+    }
     .top-nav { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
     .top-tab {
       background: transparent; color: var(--muted); border: 1px solid transparent;
@@ -341,6 +368,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       <div class="brand">
         <span>⚽ 足球量化情报官</span>
         <span class="upd-tag" id="updTime">加载中...</span>
+        <button class="upd-btn" id="btnManualUpd" onclick="manualUpdateNow(this)" title="点击立即刷新最新数据或唤醒云端重新抓盘">🔄 立即更新</button>
       </div>
       <nav class="top-nav">
         <button class="top-tab active" data-tab="matches" onclick="goTab('matches')">赛程与预测</button>
@@ -380,7 +408,15 @@ MOBILE_HTML = r"""<!DOCTYPE html>
         <button class="pool-btn active" data-pool="ALL" onclick="setPool('ALL', this)">🔥 全部策略 <span id="pAll"></span></button>
         <button class="pool-btn val" data-pool="VALUE" onclick="setPool('VALUE', this)">💎 价值单挑池(绿灯+高赔/赔率划算EV) <span id="pVal"></span></button>
         <button class="pool-btn banker" data-pool="BANKER" onclick="setPool('BANKER', this)">🛡️ 串关稳胆池(绿灯≥75分) <span id="pBanker"></span></button>
+        <button class="pool-btn" data-pool="BODAN" onclick="setPool('BODAN', this)">🎯 波胆精选(低球密集局) <span id="pBodan"></span></button>
         <button class="pool-btn risk" data-pool="RISK" onclick="setPool('RISK', this)">⚠️ 高危避坑池 <span id="pRisk"></span></button>
+      </div>
+      <div class="parlay-wrap" id="parlayWrap">
+        <div class="parlay-head">
+          <div style="font-size:14px;font-weight:800;color:#fff;">🧩 智能配串参考（2串1 · 3串1）& 🎯 波胆精选 <span style="font-size:11px;font-weight:500;color:var(--muted);">（自动踢掉红灯/看法打架/1.25以下超低赔，点击场次看详情）</span></div>
+          <button class="btn" style="padding:3px 9px;font-size:11px;" onclick="toggleParlay(this)">收起</button>
+        </div>
+        <div class="parlay-grid" id="parlayGrid"></div>
       </div>
       <div class="scroll-row" id="lgChips">
         <span class="chip active" onclick="setLg('ALL', this)">全部</span>
@@ -411,21 +447,33 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     <!-- Tab 4: 飞书推送与设置 -->
     <div id="tab-settings" class="section">
       <div class="box">
-        <h4>📲 云端自动推送计划（电脑关机照常运行）</h4>
+        <h4>📲 云端自动推送计划（电脑关机照常运行 · 0成本免费）</h4>
         <div style="font-size:13px;display:grid;gap:8px;color:var(--text);">
-          <div>• <strong>每日 08:43 / 09:43</strong>：双保险核对昨晚完场比分并推送《每日赛后复盘报告》</div>
-          <div>• <strong>每日 11:43 / 12:43</strong>：双保险推送《午间焦点赛前初判简报》</div>
-          <div>• <strong>每日 19:43 / 20:43</strong>：双保险推送《晚间盘口更新简报》</div>
-          <div>• <strong>每日 18:13 ~ 次日 03:13（每小时）</strong>：赛前约 1 小时临场终审巡检，检测官方首发大轮换并锁单推飞书</div>
+          <div>• <strong>每日 08:17 / 10:17</strong>：双保险核对昨晚完场比分并推送《每日赛后复盘报告》</div>
+          <div>• <strong>每日 11:47 / 12:47</strong>：双保险推送《午间焦点赛前初判简报》</div>
+          <div>• <strong>每日 19:17 / 20:17 / 21:17</strong>：三重保险推送《晚间盘口更新简报》（休赛日也会推未来48小时预告）</div>
+          <div>• <strong>每日 22:17 ~ 次日 03:17（+02:47欧冠加餐）</strong>：赛前约 1 小时临场终审巡检，检测 3+ 主力轮换并锁盘推飞书</div>
         </div>
+      </div>
+      <div class="box">
+        <h4>⚡ 开启顶部「🔄 立即更新」一键唤醒云端实时重算（可选 · 仅存自己浏览器）</h4>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+          默认点顶部「🔄 立即更新」会立刻拉取最新云端数据；若您希望在手机/电脑上<strong>不用等定时、点一下直接唤醒云端服务器现抓最新盘口和首发</strong>，可把您的 GitHub 令牌（仅存在当前浏览器本地，绝不上传）填在下方：
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="ghPatInput" type="password" placeholder="粘贴 ghp_... 令牌（仅存本机浏览器）" style="flex:1;min-width:210px;background:#0b1326;color:#fff;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;" />
+          <button class="btn btn-green" onclick="saveGhPat()">💾 保存到本机浏览器</button>
+          <button class="btn" onclick="clearGhPat()">🗑️ 清除</button>
+        </div>
+        <div id="ghPatStatus" style="font-size:11px;color:var(--accent);margin-top:6px;"></div>
       </div>
       <div class="box">
         <h4>⚙️ 密钥安全与本机完整控制台说明</h4>
         <div style="font-size:13px;color:var(--muted);display:grid;gap:8px;">
-          <div>• 为防止飞书机器人 Webhook 密钥泄露，本云端展示页仅做安全只读展示，不存放任何密钥。</div>
+          <div>• 为防止飞书机器人 Webhook 密钥泄露，本云端展示页仅做安全只读展示，不存放任何服务端密钥。</div>
           <div>• 如需修改飞书 Webhook、手动实时抓拍盘口或运行本地批量分析，请在本机双击 <strong style="color:#fff;">启动足球预测软件.bat</strong> 访问 <strong style="color:var(--accent);">http://127.0.0.1:8765</strong>。</div>
           <div style="margin-top:4px;">
-            <a href="https://github.com/Felix82430/football-predictor/actions" target="_blank" rel="noopener" class="btn btn-green" style="text-decoration:none;display:inline-block;">🚀 打开云端推送后台（可一键手动触发）</a>
+            <a href="https://github.com/Felix82430/football-predictor/actions" target="_blank" rel="noopener" class="btn btn-green" style="text-decoration:none;display:inline-block;">🚀 打开云端推送后台（也可手动点 Run workflow）</a>
           </div>
         </div>
       </div>
@@ -444,6 +492,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
   <div class="modal" id="modal" onclick="if(event.target===this) closeSheet()">
     <div class="sheet" id="sheet"></div>
   </div>
+  <div class="toast" id="toast"></div>
 
   <script>
     let DATA = null;
@@ -465,14 +514,255 @@ MOBILE_HTML = r"""<!DOCTYPE html>
 
     function getMatchPoolFlags(m) {
       const p = m.prediction;
-      if (!p || !p.confidence) return { isValue: false, isBanker: false, isRisk: false, recOdds: null };
+      if (!p || !p.confidence) return { isValue: false, isBanker: false, isBodan: false, isRisk: false, recOdds: null, top3Sum: 0 };
       const sc = p.confidence.score || 0;
       const recOdds = getMatchOddsForRec(m);
       const hasEv = !!(p.value_ev && p.value_ev.best_value);
+      const top3Sum = (p.top3_scores || []).reduce((s, x) => s + (x.prob || 0), 0);
+      const totXg = (p.final_home_xg || 0) + (p.final_away_xg || 0);
       const isValue = p.traffic_light === 'GREEN' && sc >= 55 && ((recOdds && recOdds >= 1.75) || hasEv);
       const isBanker = p.traffic_light === 'GREEN' && sc >= 75;
+      const isBodan = totXg > 0 && totXg <= 2.85 && top3Sum >= 0.30 && p.traffic_light !== 'RED';
       const isRisk = p.traffic_light === 'RED' || (p.odds_trend_note || '').includes('异常变盘');
-      return { isValue, isBanker, isRisk, recOdds };
+      return { isValue, isBanker, isBodan, isRisk, recOdds, top3Sum };
+    }
+
+    function showToast(msg, ms = 4200) {
+      const el = document.getElementById('toast');
+      if (!el) return;
+      el.innerHTML = msg;
+      el.style.display = 'block';
+      clearTimeout(window._tt);
+      window._tt = setTimeout(() => { el.style.display = 'none'; }, ms);
+    }
+
+    function toggleParlay(btn) {
+      const g = document.getElementById('parlayGrid');
+      const hidden = g.style.display === 'none';
+      g.style.display = hidden ? 'grid' : 'none';
+      btn.textContent = hidden ? '收起' : '展开';
+    }
+
+    function refreshGhPatStatus() {
+      const el = document.getElementById('ghPatStatus');
+      if (!el) return;
+      const saved = localStorage.getItem('fp_gh_pat');
+      el.textContent = saved
+        ? '✅ 已在本机浏览器绑定一键云端触发钥匙：点击顶部「🔄 立即更新」会自动唤醒云端服务器现抓最新盘口！'
+        : 'ℹ️ 当前未绑定令牌：点击顶部「🔄 立即更新」将秒速拉取最新已生成数据；绑定后可一键触发云端服务器重新抓盘重算。';
+    }
+
+    function saveGhPat() {
+      const v = (document.getElementById('ghPatInput').value || '').trim();
+      if (!v) return showToast('请先粘贴令牌再保存');
+      localStorage.setItem('fp_gh_pat', v);
+      document.getElementById('ghPatInput').value = '';
+      refreshGhPatStatus();
+      showToast('✅ 已保存到当前浏览器！现在点顶部「🔄 立即更新」可直接唤醒云端实时抓盘重算！');
+    }
+
+    function clearGhPat() {
+      localStorage.removeItem('fp_gh_pat');
+      refreshGhPatStatus();
+      showToast('已清除本机浏览器保存的令牌');
+    }
+
+    async function manualUpdateNow(btn) {
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ 更新中...'; }
+      const prevUpd = DATA ? DATA.updated_bjt : '';
+      try {
+        const res = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
+        const fresh = await res.json();
+        const changed = fresh.updated_bjt !== prevUpd;
+        DATA = fresh;
+        applyDataToPage();
+
+        const pat = localStorage.getItem('fp_gh_pat');
+        if (pat) {
+          showToast('⚡ 已刷新本地缓存，正在唤醒云端服务器现抓最新盘口与赛果（约需 45~70 秒）...', 8000);
+          const trig = await fetch('https://api.github.com/repos/Felix82430/football-predictor/actions/workflows/football_auto_push.yml/dispatches', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': 'Bearer ' + pat,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ref: 'main', inputs: { task: 'auto', force: false } }),
+          });
+          if (trig.status === 204) {
+            if (btn) btn.textContent = '⚡ 云端抓取中...';
+            let tries = 0;
+            const poll = setInterval(async () => {
+              tries++;
+              try {
+                const r2 = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
+                const d2 = await r2.json();
+                if (d2.updated_bjt !== fresh.updated_bjt) {
+                  clearInterval(poll);
+                  DATA = d2;
+                  applyDataToPage();
+                  if (btn) { btn.disabled = false; btn.textContent = '🔄 立即更新'; }
+                  showToast('✅ 云端现抓完成！已自动刷新至最新时间：' + d2.updated_bjt, 6000);
+                  return;
+                }
+              } catch (e) {}
+              if (tries >= 12) {
+                clearInterval(poll);
+                if (btn) { btn.disabled = false; btn.textContent = '🔄 立即更新'; }
+                showToast('ℹ️ 云端任务仍在排队发布，稍等片刻再点一下「🔄 立即更新」即可看到最新盘口。', 5000);
+              }
+            }, 10000);
+            return;
+          } else {
+            showToast('⚠️ 云端触发失败(HTTP ' + trig.status + ')，请检查「飞书推送与设置」里的令牌是否有效。', 6000);
+          }
+        } else {
+          showToast(
+            changed
+              ? '✅ 已拉取最新数据（更新时间：' + fresh.updated_bjt + '）！'
+              : '✅ 已重新拉取最新文件（当前版本：' + fresh.updated_bjt + '）。如需现抓最新盘口，可点「飞书推送与设置」绑定一次令牌或一键跳转云端后台触发。',
+            6000
+          );
+        }
+      } catch (e) {
+        showToast('刷新失败：' + e.message);
+      } finally {
+        if (btn && btn.textContent !== '⚡ 云端抓取中...') {
+          btn.disabled = false;
+          btn.textContent = '🔄 立即更新';
+        }
+      }
+    }
+
+    function renderParlays() {
+      const wrap = document.getElementById('parlayWrap');
+      const grid = document.getElementById('parlayGrid');
+      if (!DATA || !wrap || !grid) return;
+
+      // 仅针对未开赛且已出预测的比赛生成配串与波胆精选
+      const cands = DATA.matches
+        .filter(m => m.status === 'SCHEDULED' && m.prediction && m.prediction.confidence && (curLg === 'ALL' || m.league_code === curLg))
+        .map(m => {
+          const p = m.prediction;
+          const f = getMatchPoolFlags(m);
+          const sc = p.confidence.score || 0;
+          const rec = p.recommended_outcome;
+          const recProb = rec === 'H' ? p.final_prob_home : (rec === 'D' ? p.final_prob_draw : p.final_prob_away);
+          const dc = (p.lottery && p.lottery.double_chance) || {};
+          const dcSide = p.final_prob_home >= p.final_prob_away ? `${m.home_team_cn}不输(胜/平)` : `${m.away_team_cn}不输(平/负)`;
+          const dcProb = p.final_prob_home >= p.final_prob_away ? (dc['1X'] || 0) : (dc['X2'] || 0);
+          const tNote = p.traffic_note || '';
+          const isConflict = tNote.includes('看法') && tNote.includes('打架');
+          return { m, p, f, sc, rec, recProb, dcSide, dcProb, isConflict };
+        })
+        .filter(x => x.p.traffic_light !== 'RED' && !x.isConflict);
+
+      // 合法直串候选：绿灯优先，赔率 >= 1.25（剔除1.08超低赔鸡肋）
+      const cleanStraight = cands
+        .filter(x => x.f.recOdds && x.f.recOdds >= 1.25)
+        .sort((a, b) => (b.p.traffic_light === 'GREEN' ? 1 : 0) - (a.p.traffic_light === 'GREEN' ? 1 : 0) || b.sc - a.sc);
+
+      const greenOnly = cleanStraight.filter(x => x.p.traffic_light === 'GREEN');
+      const basePool = greenOnly.length >= 2 ? greenOnly : cleanStraight;
+
+      const cards = [];
+      const fmtLeg = (x, useDc = false) => `
+        <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
+          <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">${(x.m.kickoff_bjt||'').slice(5)}</span></div>
+          <div style="text-align:right;white-space:nowrap;">
+            <strong style="color:${useDc ? '#38bdf8' : '#4ade80'};">${useDc ? x.dcSide : OUT_ZH[x.rec] + (x.f.recOdds ? ' @' + Number(x.f.recOdds).toFixed(2) : '')}</strong>
+            <span style="color:var(--muted);font-size:11px;"> (${((useDc ? x.dcProb : x.recProb)*100).toFixed(0)}%)</span>
+          </div>
+        </div>`;
+
+      // 1. 稳健 2串1
+      if (basePool.length >= 2) {
+        const legs = basePool.slice(0, 2);
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`
+          <div class="parlay-card">
+            <div class="parlay-title">
+              <span style="color:#93c5fd;">🛡️ 稳健 2 串 1（高把握直串）</span>
+              <span class="pill">参考赔率 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+            </div>
+            ${legs.map(x => fmtLeg(x, false)).join('')}
+          </div>`);
+      }
+
+      // 2. 稳带搏 2串1（1稳胆 + 1高赔价值单）
+      const banker1 = basePool.find(x => x.f.recOdds >= 1.30 && x.f.recOdds < 1.75) || basePool[0];
+      const value1 = basePool.find(x => banker1 && x.m.match_id !== banker1.m.match_id && x.f.recOdds >= 1.75);
+      if (banker1 && value1) {
+        const legs = [banker1, value1];
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`
+          <div class="parlay-card">
+            <div class="parlay-title">
+              <span style="color:#4ade80;">💎 稳带搏 2 串 1（1稳胆 + 1高赔价值）</span>
+              <span class="pill">参考赔率 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+            </div>
+            ${legs.map(x => fmtLeg(x, false)).join('')}
+          </div>`);
+      }
+
+      // 3. 稳健 3串1
+      if (basePool.length >= 3) {
+        const legs = basePool.slice(0, 3);
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`
+          <div class="parlay-card">
+            <div class="parlay-title">
+              <span style="color:#38bdf8;">🔥 稳健 3 串 1（精选 3 场绿灯高把握）</span>
+              <span class="pill">参考赔率 <strong>${odd.toFixed(2)}倍</strong> · 联合胜率 ${(prob*100).toFixed(0)}%</span>
+            </div>
+            ${legs.map(x => fmtLeg(x, false)).join('')}
+          </div>`);
+      }
+
+      // 4. 防冷双选 3串1（专治平局，实盘双选命中率94%+思路）
+      const dcPool = cands.filter(x => x.dcProb >= 0.68).sort((a, b) => (b.p.traffic_light === 'GREEN' ? 1 : 0) - (a.p.traffic_light === 'GREEN' ? 1 : 0) || b.dcProb - a.dcProb);
+      if (dcPool.length >= 3) {
+        const legs = dcPool.slice(0, 3);
+        const prob = legs.reduce((a, x) => a * x.dcProb, 1);
+        cards.push(`
+          <div class="parlay-card">
+            <div class="parlay-title">
+              <span style="color:#fbbf24;">🧱 防冷不输 3 串 1（专治平局爆冷）</span>
+              <span class="pill">联合防冷概率 <strong>${(prob*100).toFixed(0)}%</strong></span>
+            </div>
+            ${legs.map(x => fmtLeg(x, true)).join('')}
+          </div>`);
+      }
+
+      // 5. 今日波胆精选（低总进球密集局）
+      const bodanList = cands.filter(x => x.f.isBodan).sort((a, b) => b.f.top3Sum - a.f.top3Sum).slice(0, 3);
+      if (bodanList.length) {
+        cards.push(`
+          <div class="parlay-card" style="grid-column:1/-1;">
+            <div class="parlay-title">
+              <span style="color:#c084fc;">🎯 今日波胆精选（预计进球偏低 + 前3比分最集中，适合3比分娱乐小包围）</span>
+              <span style="font-size:11px;color:var(--muted);">轻仓娱乐为主</span>
+            </div>
+            ${bodanList.map(x => `
+              <div class="parlay-leg" onclick="openSheet('${x.m.match_id}')">
+                <div><span class="lg-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);font-size:11px;">预计总球(xG) ${(x.p.final_home_xg+x.p.final_away_xg).toFixed(2)}</span></div>
+                <div style="text-align:right;">
+                  ${(x.p.top3_scores||[]).map(t => `<span class="pill"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join(' ')}
+                  <span style="color:#c084fc;font-weight:700;font-size:11px;margin-left:4px;">合计 ${(x.f.top3Sum*100).toFixed(0)}%</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>`);
+      }
+
+      if (!cards.length) {
+        grid.innerHTML = `<div style="font-size:12px;color:var(--muted);">当前筛选下暂无足够未开赛绿灯场次生成配串（切换“全部”联赛可查看全站配串）。</div>`;
+      } else {
+        grid.innerHTML = cards.join('');
+      }
     }
 
     function setPool(pool, btn) {
@@ -516,9 +806,8 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       document.getElementById('cntAll').textContent = `(${scoped.length})`;
     }
 
-    async function boot() {
-      const res = await fetch('./data.json?t=' + Date.now());
-      DATA = await res.json();
+    function applyDataToPage() {
+      if (!DATA) return;
       document.getElementById('updTime').textContent = '更新：' + DATA.updated_bjt;
       document.getElementById('kUp').textContent = DATA.overview.upcoming_matches + ' 场';
       document.getElementById('kSnap').textContent = '盘口快照 ' + DATA.overview.odds_snapshots + ' 条';
@@ -540,28 +829,38 @@ MOBILE_HTML = r"""<!DOCTYPE html>
       renderMatches();
       renderReviews();
       renderBacktest();
+      refreshGhPatStatus();
+    }
+
+    async function boot() {
+      const res = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
+      DATA = await res.json();
+      applyDataToPage();
     }
 
     function renderMatches() {
       if (!DATA) return;
       refreshStatusCounts();
+      renderParlays();
       const sort = document.getElementById('sortSel').value;
       const baseList = DATA.matches.filter(m =>
         (curLg === 'ALL' || m.league_code === curLg) &&
         (curStatus === 'ALL' || (curStatus === 'STARTED' ? m.status !== 'SCHEDULED' : m.status === curStatus))
       );
 
-      // 实时刷新四大策略池计数
-      let nVal = 0, nBanker = 0, nRisk = 0;
+      // 实时刷新五大策略池计数
+      let nVal = 0, nBanker = 0, nBodan = 0, nRisk = 0;
       baseList.forEach(m => {
         const f = getMatchPoolFlags(m);
         if (f.isValue) nVal++;
         if (f.isBanker) nBanker++;
+        if (f.isBodan) nBodan++;
         if (f.isRisk) nRisk++;
       });
       document.getElementById('pAll').textContent = `(${baseList.length})`;
       document.getElementById('pVal').textContent = `(${nVal})`;
       document.getElementById('pBanker').textContent = `(${nBanker})`;
+      if (document.getElementById('pBodan')) document.getElementById('pBodan').textContent = `(${nBodan})`;
       document.getElementById('pRisk').textContent = `(${nRisk})`;
 
       let list = baseList.filter(m => {
@@ -569,6 +868,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
         const f = getMatchPoolFlags(m);
         if (curPool === 'VALUE') return f.isValue;
         if (curPool === 'BANKER') return f.isBanker;
+        if (curPool === 'BODAN') return f.isBodan;
         if (curPool === 'RISK') return f.isRisk;
         return true;
       });

@@ -29,8 +29,16 @@
       border-bottom: 1px solid var(--border);
       padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; flex-wrap: wrap; }
     .brand span.badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(56,189,248,.16); color: var(--accent); border: 1px solid rgba(56,189,248,.35); }
+    .upd-btn { font-size: 12px; font-weight: 700; color: #fff; background: #1d4ed8; border: 1px solid #3b82f6; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+    .upd-btn:hover { background: #2563eb; }
+    .upd-btn:disabled { opacity: .6; cursor: wait; }
+    .parlay-wrap { background: linear-gradient(135deg, rgba(17,26,46,.96), rgba(23,35,61,.92)); border: 1px solid rgba(56,189,248,.32); border-radius: 12px; padding: 13px 16px; margin-bottom: 14px; }
+    .parlay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 10px; }
+    .parlay-card { background: rgba(11,17,32,.78); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
+    .parlay-leg { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; background: rgba(23,35,61,.65); margin-bottom: 5px; font-size: 12px; cursor: pointer; }
+    .parlay-leg:hover { outline: 1px solid var(--accent); }
     nav { display: flex; gap: 8px; flex-wrap: wrap; }
     .tab-btn {
       background: transparent; color: var(--muted); border: 1px solid transparent;
@@ -164,6 +172,7 @@
     <div class="brand">
       ⚽ 足球量化情报官
       <span class="badge">五大联赛 + 欧冠 · 0成本开源试运营</span>
+      <button class="upd-btn" onclick="quickRefreshAll(this)">🔄 立即更新</button>
     </div>
     <nav>
       <button class="tab-btn active" onclick="switchTab('matches', this)">赛程与预测</button>
@@ -217,6 +226,13 @@
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px;padding:7px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;">
         📖 <strong>术语小词典：</strong>xG = 预计进球数 · EV = 赔率划不划算(正EV=赔率给高了) · ROI = 每场均注100元回报率 · Top3 = 最可能踢出的前3个比分 · CLV = 临场赔率涨跌 · Brier = 概率精准度(越小越准)
+      </div>
+      <div class="parlay-wrap" id="localParlayWrap">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+          <strong style="font-size:14px;">🧩 智能配串参考（2串1 · 3串1）& 🎯 波胆精选 <span style="font-size:12px;font-weight:400;color:var(--muted);">（自动踢掉红灯/看法打架/1.25以下超低赔，点击场次看详情）</span></strong>
+          <button class="btn" style="padding:3px 10px;font-size:12px;" onclick="const g=document.getElementById('localParlayGrid');const h=g.style.display==='none';g.style.display=h?'grid':'none';this.textContent=h?'收起':'展开';">收起</button>
+        </div>
+        <div class="parlay-grid" id="localParlayGrid"></div>
       </div>
       <div class="match-grid" id="matchGrid"></div>
     </div>
@@ -438,12 +454,93 @@
       return { isValue, isBanker, isRisk, recOdds };
     }
 
+    async function quickRefreshAll(btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ 同步重算中...';
+      showToast('正在同步最新赛程盘口并重算焦点赛事...');
+      try {
+        await api('/api/sync', { method: 'POST' });
+        await api('/api/analyze-upcoming', { method: 'POST' });
+        await loadOverview();
+        await loadMatches();
+        showToast('✅ 已同步最新盘口并刷新全页数据！');
+      } catch (e) { showToast('刷新失败：' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '🔄 立即更新'; }
+    }
+
+    function renderLocalParlays(allItems) {
+      const grid = document.getElementById('localParlayGrid');
+      if (!grid) return;
+      const outMap = { H: '主胜', D: '平局', A: '客胜' };
+      const cands = (allItems || [])
+        .filter(m => m.status === 'SCHEDULED' && m.prediction_id && m.confidence)
+        .map(m => {
+          const f = getLocalPoolFlags(m);
+          const sc = m.confidence.score || 0;
+          const rec = m.recommended_outcome;
+          const recProb = rec === 'H' ? m.final_prob_home : (rec === 'D' ? m.final_prob_draw : m.final_prob_away);
+          const dcSide = m.final_prob_home >= m.final_prob_away ? `${m.home_team_cn}不输(胜/平)` : `${m.away_team_cn}不输(平/负)`;
+          const dcProb = m.final_prob_home >= m.final_prob_away ? (m.final_prob_home + m.final_prob_draw) : (m.final_prob_away + m.final_prob_draw);
+          const top3Sum = (m.top3_scores || []).reduce((s, x) => s + (x.prob || 0), 0);
+          const totXg = Number(m.final_home_xg || 0) + Number(m.final_away_xg || 0);
+          const tNote = m.traffic_note || '';
+          const isConflict = tNote.includes('看法') && tNote.includes('打架');
+          return { m, f, sc, rec, recProb, dcSide, dcProb, top3Sum, totXg, isConflict };
+        })
+        .filter(x => x.m.traffic_light !== 'RED' && !x.isConflict);
+
+      const clean = cands.filter(x => x.f.recOdds && x.f.recOdds >= 1.25)
+        .sort((a, b) => (b.m.traffic_light === 'GREEN' ? 1 : 0) - (a.m.traffic_light === 'GREEN' ? 1 : 0) || b.sc - a.sc);
+      const greens = clean.filter(x => x.m.traffic_light === 'GREEN');
+      const pool = greens.length >= 2 ? greens : clean;
+
+      const fmtLeg = (x, useDc) => `
+        <div class="parlay-leg" onclick="openDetail('${x.m.match_id}')">
+          <div><span class="league-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong></div>
+          <div><strong style="color:${useDc?'#38bdf8':'#4ade80'};">${useDc ? x.dcSide : outMap[x.rec] + ' @' + Number(x.f.recOdds).toFixed(2)}</strong> <span style="color:var(--muted);">(${((useDc?x.dcProb:x.recProb)*100).toFixed(0)}%)</span></div>
+        </div>`;
+
+      const cards = [];
+      if (pool.length >= 2) {
+        const legs = pool.slice(0, 2);
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`<div class="parlay-card"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><strong style="color:#93c5fd;">🛡️ 稳健 2 串 1</strong><span class="score-chip">约 <strong>${odd.toFixed(2)}倍</strong> · 胜率 ${(prob*100).toFixed(0)}%</span></div>${legs.map(x=>fmtLeg(x,false)).join('')}</div>`);
+      }
+      const b1 = pool.find(x => x.f.recOdds >= 1.30 && x.f.recOdds < 1.75) || pool[0];
+      const v1 = pool.find(x => b1 && x.m.match_id !== b1.m.match_id && x.f.recOdds >= 1.75);
+      if (b1 && v1) {
+        const legs = [b1, v1];
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`<div class="parlay-card"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><strong style="color:#4ade80;">💎 稳带搏 2 串 1</strong><span class="score-chip">约 <strong>${odd.toFixed(2)}倍</strong> · 胜率 ${(prob*100).toFixed(0)}%</span></div>${legs.map(x=>fmtLeg(x,false)).join('')}</div>`);
+      }
+      if (pool.length >= 3) {
+        const legs = pool.slice(0, 3);
+        const odd = legs.reduce((a, x) => a * Number(x.f.recOdds), 1);
+        const prob = legs.reduce((a, x) => a * x.recProb, 1);
+        cards.push(`<div class="parlay-card"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><strong style="color:#38bdf8;">🔥 稳健 3 串 1</strong><span class="score-chip">约 <strong>${odd.toFixed(2)}倍</strong> · 胜率 ${(prob*100).toFixed(0)}%</span></div>${legs.map(x=>fmtLeg(x,false)).join('')}</div>`);
+      }
+      const dcPool = cands.filter(x => x.dcProb >= 0.68).sort((a, b) => b.dcProb - a.dcProb);
+      if (dcPool.length >= 3) {
+        const legs = dcPool.slice(0, 3);
+        const prob = legs.reduce((a, x) => a * x.dcProb, 1);
+        cards.push(`<div class="parlay-card"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><strong style="color:#fbbf24;">🧱 防冷不输 3 串 1</strong><span class="score-chip">联合防冷 <strong>${(prob*100).toFixed(0)}%</strong></span></div>${legs.map(x=>fmtLeg(x,true)).join('')}</div>`);
+      }
+      const bodan = cands.filter(x => x.totXg > 0 && x.totXg <= 2.85 && x.top3Sum >= 0.30).sort((a, b) => b.top3Sum - a.top3Sum).slice(0, 3);
+      if (bodan.length) {
+        cards.push(`<div class="parlay-card" style="grid-column:1/-1;"><div style="margin-bottom:6px;"><strong style="color:#c084fc;">🎯 今日波胆精选（低总进球密集局 · 3比分小包围）</strong></div>${bodan.map(x=>`<div class="parlay-leg" onclick="openDetail('${x.m.match_id}')"><div><span class="league-tag">${x.m.league_name}</span> <strong>${x.m.home_team_cn} vs ${x.m.away_team_cn}</strong> <span style="color:var(--muted);">预计总球(xG) ${x.totXg.toFixed(2)}</span></div><div>${(x.m.top3_scores||[]).map(t=>`<span class="score-chip"><strong>${t.score}</strong> ${(t.prob*100).toFixed(0)}%</span>`).join(' ')} <strong style="color:#c084fc;">合计${(x.top3Sum*100).toFixed(0)}%</strong></div></div>`).join('')}</div>`);
+      }
+      grid.innerHTML = cards.length ? cards.join('') : '<div style="font-size:12px;color:var(--muted);">暂无足够未开赛场次生成配串（切换“未开赛/全部”查看）。</div>';
+    }
+
     async function loadMatches() {
       const status = currentStatus;
       const sort = document.getElementById('sortFilter') ? document.getElementById('sortFilter').value : 'confidence';
       const d = await api(`/api/matches?league=${currentLeague}&status=${status}&sort=${sort}&limit=100`);
       const grid = document.getElementById('matchGrid');
       const allItems = d.items || [];
+      renderLocalParlays(allItems);
 
       let nVal = 0, nBanker = 0, nRisk = 0;
       allItems.forEach(m => {
