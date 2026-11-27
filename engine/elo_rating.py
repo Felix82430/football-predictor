@@ -11,21 +11,21 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-# 联赛基础实力偏移（参考 UEFA 欧战系数与 ClubElo 均值，解决欧冠跨联赛实力梯度对齐）
+# 联赛基础实力偏移（v1.9 摘掉“英超滤镜”，拉近葡超/荷甲/土超等欧战主场强敌与五大联赛的合理差距）
 LEAGUE_BASE_ELO: Dict[str, float] = {
-    "EPL": 1680.0,
+    "EPL": 1660.0,
     "LALIGA": 1640.0,
     "SERIEA": 1625.0,
     "BUNDESLIGA": 1620.0,
-    "LIGUE1": 1575.0,
+    "LIGUE1": 1585.0,
     "UCL": 1630.0,
-    # 欧洲二线联赛基准（强队打完整个赛季后自然攀升至 1600~1720，与五大联赛无缝对齐）
-    "EREDIVISIE": 1510.0,
-    "PRIMEIRA": 1500.0,
-    "BELGIUM": 1485.0,
-    "TURKEY": 1475.0,
-    "SCOTLAND": 1435.0,
-    "GREECE": 1430.0,
+    # 欧洲二线联赛基准（主场面对五大联赛豪门并不逊色，避免低估葡体/费耶诺德/加拉塔萨雷等主场龙）
+    "EREDIVISIE": 1545.0,
+    "PRIMEIRA": 1545.0,
+    "BELGIUM": 1520.0,
+    "TURKEY": 1515.0,
+    "SCOTLAND": 1475.0,
+    "GREECE": 1470.0,
 }
 
 

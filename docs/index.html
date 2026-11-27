@@ -193,7 +193,10 @@
 
     <!-- Tab 1: 赛程预测 -->
     <div id="tab-matches" class="section active">
-      <div class="legend">🟢绿灯=模型和全球赔率看法一致(最稳优先看) &nbsp;|&nbsp; 🟡黄灯=看法有分歧(建议防平或等赛前1小时看首发) &nbsp;|&nbsp; 🔴红灯=突然变盘或分歧太大(容易爆冷慎碰)</div>
+      <div class="legend">
+        <div>🟢绿灯=模型和全球赔率看法一致(最稳优先看) &nbsp;|&nbsp; 🟡黄灯=看法有分歧或临场轮换(建议防平/看首发) &nbsp;|&nbsp; 🔴红灯=反向砸盘或分歧太大(慎碰)</div>
+        <div style="margin-top:4px;color:#94a3b8;">📖 <strong>小白词典：</strong>xG=预计进球数 · EV=赔率划不划算(正EV=赔率给高了) · ROI=每场均注100元回报率 · Top3=最可能踢出的前3个比分 · CLV=临场赔率涨跌</div>
+      </div>
       <div class="filter-bar">
         <div class="status-seg" id="statusSeg">
           <button class="st-btn active" data-st="SCHEDULED" onclick="setStatus('SCHEDULED', this)">⏳ 未开赛 <span id="cntSched"></span></button>
@@ -207,7 +210,7 @@
       </div>
       <div class="pool-bar" id="poolBar">
         <button class="pool-btn active" data-pool="ALL" onclick="setPool('ALL', this)">🔥 全部策略 <span id="pAll"></span></button>
-        <button class="pool-btn val" data-pool="VALUE" onclick="setPool('VALUE', this)">💎 价值单挑池(绿灯+高赔/正EV) <span id="pVal"></span></button>
+        <button class="pool-btn val" data-pool="VALUE" onclick="setPool('VALUE', this)">💎 价值单挑池(绿灯+高赔/赔率划算EV) <span id="pVal"></span></button>
         <button class="pool-btn banker" data-pool="BANKER" onclick="setPool('BANKER', this)">🛡️ 串关稳胆池(绿灯≥75分) <span id="pBanker"></span></button>
         <button class="pool-btn risk" data-pool="RISK" onclick="setPool('RISK', this)">⚠️ 高危避坑池 <span id="pRisk"></span></button>
       </div>
@@ -355,7 +358,7 @@
       const rs = DATA.reviews.summary;
       if (rs && rs.total > 0) {
         document.getElementById('kRevAcc').textContent = (rs.outcome_acc * 100).toFixed(1) + '%';
-        const roiTxt = rs.flat_roi != null ? ` · 均注ROI ${rs.flat_roi>=0?'+':''}${rs.flat_roi}%` : '';
+        const roiTxt = rs.flat_roi != null ? ` · 回报率(ROI) ${rs.flat_roi>=0?'+':''}${rs.flat_roi}%` : '';
         document.getElementById('kRevSub').textContent = `${rs.outcome_hits}/${rs.total}场${roiTxt}`;
         const hi = (rs.tier_stats || {})['高把握(≥68分)'];
         document.getElementById('kHighAcc').textContent = hi ? `${(hi.acc*100).toFixed(0)}% (${hi.hits}/${hi.total})` : '-';
@@ -363,7 +366,7 @@
       }
       if (DATA.backtest) {
         document.getElementById('kBt').textContent = (DATA.backtest.outcome_accuracy * 100).toFixed(1) + '%';
-        document.getElementById('kBtSub').textContent = `${DATA.backtest.total_matches}场 · Top3 ${(DATA.backtest.top3_score_accuracy*100).toFixed(1)}%`;
+        document.getElementById('kBtSub').textContent = `${DATA.backtest.total_matches}场 · 前3比分(Top3) ${(DATA.backtest.top3_score_accuracy*100).toFixed(1)}%`;
       }
 
       renderMatches();
@@ -464,8 +467,8 @@
               </div>
               <div class="pill-row">
                 ${dc['1X'] ? `<span class="pill">${p.final_prob_home>=p.final_prob_away ? `防冷主不输 ${(dc['1X']*100).toFixed(0)}%` : `防冷客不输 ${(dc['X2']*100).toFixed(0)}%`}</span>` : ''}
-                <span class="pill">预计进球 ${p.final_home_xg.toFixed(2)}:${p.final_away_xg.toFixed(2)}</span>
-                ${ev ? `<span class="pill" style="border-color:#22c55e;color:#4ade80;">💎 ${ev.label}赔率有性价比</span>` : ''}
+                <span class="pill">预计进球(xG) ${p.final_home_xg.toFixed(2)}:${p.final_away_xg.toFixed(2)}</span>
+                ${ev ? `<span class="pill" style="border-color:#22c55e;color:#4ade80;">💎 ${ev.label}赔率划算(正EV)</span>` : ''}
               </div>
               ${c && c.play_advice ? `<div style="font-size:11px;color:#e2e8f0;margin-top:4px;">${c.play_advice}</div>` : ''}
             ` : `<div style="font-size:12px;color:var(--muted);">云端将在赛前自动补全三层量化预测与热力图</div>`}
@@ -593,8 +596,8 @@
       ).join(' ');
       const roiBlock = rs.flat_profit != null
         ? `<div class="pill-row" style="margin-top:6px;">
-             <span class="pill" style="border-color:${rs.flat_profit>=0?'#22c55e':'#ef4444'};">💰 模拟每场均注100元：累计 <strong style="color:${rs.flat_profit>=0?'#4ade80':'#f87171'};">${rs.flat_profit>=0?'+':''}${rs.flat_profit}元 (ROI ${rs.flat_roi>=0?'+':''}${rs.flat_roi}%)</strong></span>
-             ${rs.high_tier_profit != null ? `<span class="pill" style="border-color:${rs.high_tier_profit>=0?'#22c55e':'#f59e0b'};">⭐ 仅跟高把握(≥68分)：<strong style="color:${rs.high_tier_profit>=0?'#4ade80':'#fbbf24'};">${rs.high_tier_profit>=0?'+':''}${rs.high_tier_profit}元 (ROI ${rs.high_tier_roi>=0?'+':''}${rs.high_tier_roi}%)</strong></span>` : ''}
+             <span class="pill" style="border-color:${rs.flat_profit>=0?'#22c55e':'#ef4444'};">💰 每场均注100元：累计 <strong style="color:${rs.flat_profit>=0?'#4ade80':'#f87171'};">${rs.flat_profit>=0?'+':''}${rs.flat_profit}元 · 回报率(ROI) ${rs.flat_roi>=0?'+':''}${rs.flat_roi}%</strong></span>
+             ${rs.high_tier_profit != null ? `<span class="pill" style="border-color:${rs.high_tier_profit>=0?'#22c55e':'#f59e0b'};">⭐ 仅跟高把握(≥68分)：<strong style="color:${rs.high_tier_profit>=0?'#4ade80':'#fbbf24'};">${rs.high_tier_profit>=0?'+':''}${rs.high_tier_profit}元 · 回报率(ROI) ${rs.high_tier_roi>=0?'+':''}${rs.high_tier_roi}%</strong></span>` : ''}
            </div>`
         : '';
       document.getElementById('revSummary').innerHTML = `
@@ -673,7 +676,7 @@
         <div class="box">
           <h4>🌍 分联赛回测明细</h4>
           <table>
-            <thead><tr><th>联赛</th><th>样本</th><th>胜平负命中</th><th>Top3命中</th><th>Brier</th></tr></thead>
+            <thead><tr><th>联赛</th><th>样本</th><th>胜平负命中</th><th>前3比分(Top3)命中</th><th>概率精准度(Brier·越小越准)</th></tr></thead>
             <tbody>${lgs.map(x=>`<tr><td>${x.league_name}</td><td>${x.total}</td><td><strong>${(x.outcome_acc*100).toFixed(1)}%</strong></td><td>${(x.top3_acc*100).toFixed(1)}%</td><td>${x.brier}</td></tr>`).join('')}</tbody>
           </table>
         </div>

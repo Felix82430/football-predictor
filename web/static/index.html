@@ -211,9 +211,12 @@
       </div>
       <div class="pool-bar" id="poolBar">
         <button class="pool-btn active" data-pool="ALL" onclick="setPool('ALL', this)">🔥 全部策略 <span id="pAll"></span></button>
-        <button class="pool-btn val" data-pool="VALUE" onclick="setPool('VALUE', this)">💎 价值单挑池(绿灯+高赔/正EV) <span id="pVal"></span></button>
+        <button class="pool-btn val" data-pool="VALUE" onclick="setPool('VALUE', this)">💎 价值单挑池(绿灯+高赔/赔率划算EV) <span id="pVal"></span></button>
         <button class="pool-btn banker" data-pool="BANKER" onclick="setPool('BANKER', this)">🛡️ 串关稳胆池(绿灯≥75分) <span id="pBanker"></span></button>
         <button class="pool-btn risk" data-pool="RISK" onclick="setPool('RISK', this)">⚠️ 高危避坑池 <span id="pRisk"></span></button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;padding:7px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;">
+        📖 <strong>术语小词典：</strong>xG = 预计进球数 · EV = 赔率划不划算(正EV=赔率给高了) · ROI = 每场均注100元回报率 · Top3 = 最可能踢出的前3个比分 · CLV = 临场赔率涨跌 · Brier = 概率精准度(越小越准)
       </div>
       <div class="match-grid" id="matchGrid"></div>
     </div>
@@ -865,13 +868,13 @@
       const tierHtml = Object.entries(s.tier_stats || {}).map(([k, v]) =>
         `<span class="score-chip">${k}：<strong>${v.hits}/${v.total} (${(v.acc*100).toFixed(1)}%)</strong></span>`
       ).join(' ');
-      const clvStr = (s.avg_clv !== null && s.avg_clv !== undefined) ? ` | 平均CLV收盘价值 <strong>${s.avg_clv>=0?'+':''}${s.avg_clv}%</strong>` : '';
+      const clvStr = (s.avg_clv !== null && s.avg_clv !== undefined) ? ` | 临场赔率涨跌(CLV) <strong>${s.avg_clv>=0?'+':''}${s.avg_clv}%</strong>` : '';
 
       const roiStr = (s.flat_profit !== null && s.flat_profit !== undefined)
-        ? ` | 💰均注100元 <strong style="color:${s.flat_profit>=0?'#4ade80':'#f87171'};">${s.flat_profit>=0?'+':''}${s.flat_profit}元 (ROI ${s.flat_roi>=0?'+':''}${s.flat_roi}%)</strong>`
+        ? ` | 💰每场买100元 <strong style="color:${s.flat_profit>=0?'#4ade80':'#f87171'};">${s.flat_profit>=0?'+':''}${s.flat_profit}元 · 回报率(ROI) ${s.flat_roi>=0?'+':''}${s.flat_roi}%</strong>`
         : '';
       const hiRoiStr = (s.high_tier_profit !== null && s.high_tier_profit !== undefined)
-        ? ` | ⭐高把握均注 <strong style="color:${s.high_tier_profit>=0?'#4ade80':'#fbbf24'};">${s.high_tier_profit>=0?'+':''}${s.high_tier_profit}元 (ROI ${s.high_tier_roi>=0?'+':''}${s.high_tier_roi}%)</strong>`
+        ? ` | ⭐高把握买100元 <strong style="color:${s.high_tier_profit>=0?'#4ade80':'#fbbf24'};">${s.high_tier_profit>=0?'+':''}${s.high_tier_profit}元 · 回报率(ROI) ${s.high_tier_roi>=0?'+':''}${s.high_tier_roi}%</strong>`
         : '';
 
       document.getElementById('reviewSummaryText').innerHTML = s.total > 0

@@ -138,7 +138,7 @@ def build_daily_brief_card(items: List[Dict[str, Any]], title_suffix: str = "每
         best_val = ev_info.get("best_value")
         if best_val:
             extra_lines.append(
-                f"• 💎 性价比提醒：{best_val['label']} 赔率 {best_val['odds']} 偏高（性价比 +{best_val['ev_pct']:.1f}%，娱乐轻仓即可）"
+                f"• 💎 赔率划算提醒(正EV)：{best_val['label']} 赔率 {best_val['odds']} 偏高（性价比 +{best_val['ev_pct']:.1f}%，娱乐轻仓即可）"
             )
 
         l5 = ni.get("last_five") or {}
@@ -247,17 +247,27 @@ def build_review_report_card(summary: Dict[str, Any], reviews: List[Dict[str, An
         else ""
     )
     clv_md = (
-        f"\n**提前看准赔率走势**：{'跑赢临场赔率 ' if summary['avg_clv']>=0 else '略逊临场 '}{summary['avg_clv']:+.2f}%"
+        f"\n**临场赔率涨跌(CLV)**：{'大资金跟着看好(跑赢临场) ' if summary['avg_clv']>=0 else '临场略被看衰 '}{summary['avg_clv']:+.2f}%"
         if summary.get("avg_clv") is not None
+        else ""
+    )
+    roi_md = (
+        f"\n**💰 模拟每场买100元账本**：累计 **{summary['flat_profit']:+.1f}元 · 回报率(ROI) {summary['flat_roi']:+.1f}%**"
+        + (
+            f"（仅跟高把握≥68分：{summary['high_tier_profit']:+.1f}元 · ROI {summary['high_tier_roi']:+.1f}%）"
+            if summary.get("high_tier_profit") is not None
+            else ""
+        )
+        if summary.get("flat_profit") is not None
         else ""
     )
 
     header_md = (
         f"**累计复盘场次**：**{summary['total']}** 场{gr_md}\n"
         f"**胜平负猜中率**：**{summary['outcome_acc']*100:.1f}%**（{summary['outcome_hits']}/{summary['total']}）{dc_md}\n"
-        f"**3个候选比分猜中**：**{summary['top3_acc']*100:.1f}%**（{summary['top3_hits']}/{summary['total']}，第1首选直接猜中 {summary['exact_top1_hits']} 场）\n"
-        f"**没猜中的原因拆解**：场面占优但运气差/红牌 {summary['luck_misses']} 场 | 模型需改进 {summary['model_misses']} 场 | 黄红灯提前避雷 {summary['upset_saves']} 次"
-        f"{tier_md}{clv_md}"
+        f"**前3候选比分(Top3)猜中**：**{summary['top3_acc']*100:.1f}%**（{summary['top3_hits']}/{summary['total']}，第1首选直中 {summary['exact_top1_hits']} 场）\n"
+        f"**没猜中的原因拆解**：场面占优/前75分钟红牌运气差 {summary['luck_misses']} 场 | 模型需改进 {summary['model_misses']} 场 | 黄红灯提前避雷 {summary['upset_saves']} 次"
+        f"{tier_md}{roi_md}{clv_md}"
     )
 
     elements: List[Dict[str, Any]] = [
@@ -265,11 +275,13 @@ def build_review_report_card(summary: Dict[str, Any], reviews: List[Dict[str, An
         {"tag": "hr"},
     ]
 
-    for r in reviews[:8]:
+    for idx, r in enumerate(reviews[:9], 1):
         icon = "✅" if r["outcome_hit"] else ("🎲" if r["attribution_type"] == "VARIANCE_LUCK" else "❌")
-        top3_tag = "🎯命中Top3" if r["top3_score_hit"] else ""
+        top3_tag = "🎯命中前3比分(Top3)" if r["top3_score_hit"] else ""
+        conf_txt = f"把握{(r.get('confidence_score') or 0):.0f}分"
+        pft_txt = f" | 均注100元 {r['flat_profit']:+.1f}元" if r.get("flat_profit") is not None else ""
         md = (
-            f"{icon} **[{r['league_name']}] {r['home_team_cn']} {r['actual_home_score']}-{r['actual_away_score']} {r['away_team_cn']}** {top3_tag}\n"
+            f"{icon} **No.{idx}（{conf_txt}）[{r['league_name']}] {r['home_team_cn']} {r['actual_home_score']}-{r['actual_away_score']} {r['away_team_cn']}** {top3_tag}{pft_txt}\n"
             f"• 复盘：{r['root_cause_analysis']}\n"
             f"• 改进建议：{r.get('tuning_suggestion', '')}"
         )

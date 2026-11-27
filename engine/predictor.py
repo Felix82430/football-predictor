@@ -61,9 +61,9 @@ def detect_lineup_rotation(
     current_starters: Dict[str, List[str]],
 ) -> Optional[Dict[str, Any]]:
     """
-    v1.6 0成本临场首发轮换自动检测（Lineup Stability）：
+    v1.9 0成本临场首发轮换自动检测（Lineup Stability，门槛从 4 人调灵敏至 3 人）：
     将赛前1小时官宣的 11 人首发与球队上一场 11 人首发自动对比；
-    若单队轮换 >= 4 名主力，自动扣减攻防修正分并生成大白话预警！
+    若单队轮换 >= 3 名主力，自动扣减攻防修正分并触发红绿灯降档预警！
     """
     if not current_starters:
         return None
@@ -82,13 +82,14 @@ def detect_lineup_rotation(
             prev_set = set(prev_list)
             cur_set = set(cur_list)
             changed = len(cur_set - prev_set)
-            if changed >= 4:
-                pen = -min(0.10, round((changed - 3) * 0.025, 3))
+            if changed >= 3:
+                # 3人=-3.0%, 4人=-5.5%, 5人=-8.0%, 6人=-10.5%, 封顶 -12%
+                pen = -min(0.12, round(0.03 + (changed - 3) * 0.025, 3))
                 if is_home:
                     h_delta = pen
                 else:
                     a_delta = pen
-                notes.append(f"⚠️ {cn}临场大轮换（相比上场换了 {changed} 名主力，小心留力或磨合不足）")
+                notes.append(f"⚠️ {cn}临场轮换告警（相比上场换了 {changed} 名主力，小心留力或残阵翻车）")
         if cur_list != prev_list:
             saved[team] = cur_list[:11]
             updated = True
@@ -320,11 +321,14 @@ def compute_traffic_light(
     abnormal_odds_shift: bool,
     odds_dh: float = 0.0,
     odds_da: float = 0.0,
+    has_lineup_rotation: bool = False,
 ) -> tuple[str, str]:
     """
-    第三层：市场赔率红绿灯防偏体检（v1.7 区分“同向过热”与“反向砸盘”）：
-    - 同向共振且市场比我方更坚定（如我方71% vs 市场84%）：不再误判为红灯！
-    - 资金逆着我方主推方向大幅砸盘（如临场隐含胜率暴跌>=5%）：立刻亮红灯预警！
+    第三层：市场赔率红绿灯防偏体检（v1.9 完整规则）：
+    1. 资金逆向砸盘（我方主推胜率从初盘暴跌>=5%）：立刻亮 🔴红灯
+    2. 方向相反（我方主推 ≠ 全球赔率主推）：绝不给绿灯！差值>12%亮 🔴红灯，否则降为 🟡黄灯提醒防平/观望
+    3. 临场换了 >=3 名主力轮换：绿灯自动降档为 🟡黄灯，提醒小心强队留力或残阵翻车
+    4. 同向且市场更坚定（强队过热）：不再误杀成红灯
     """
     if any(x is None for x in market_probs):
         return "YELLOW", "暂时还没抓到全球主流赔率做对比，建议临开球前再看一眼最新变化。"
@@ -339,7 +343,7 @@ def compute_traffic_light(
     same_direction = rec_idx == mkt_idx
     market_more_bullish = same_direction and (m_probs[rec_idx] >= final_probs[rec_idx])
 
-    # 判断是否出现“反向砸盘”（市场临场资金逆着我方主推方向大跌 >= 5%）
+    # 1. 判断是否出现“反向砸盘”（市场临场资金逆着我方主推方向大跌 >= 5%）
     reverse_shift = (rec_idx == 0 and odds_dh <= -5.0) or (rec_idx == 2 and odds_da <= -5.0)
     if reverse_shift:
         drop = abs(odds_dh if rec_idx == 0 else odds_da)
@@ -348,11 +352,23 @@ def compute_traffic_light(
     if abnormal_odds_shift and not market_more_bullish and max_diff > MARKET_TRAFFIC_LIGHT["green_max_diff"]:
         return "RED", f"临场赔率突然大变，且和模型看法相差 {diff_pct}%！可能有突发伤病或大资金异动，一定要等赛前1小时看首发，别盲目重注。"
 
+    # 2. v1.9 反向对顶强制防冷：模型和全球主流赔率主推方向正好相反时，绝不给绿灯硬顶市场！
+    if not same_direction:
+        if max_diff > 0.12 and not has_strong_intel:
+            return "RED", f"⚠️ 看法严重打架！模型和全球赔率主推方向正好相反（相差 {diff_pct}%），切忌硬顶市场单挑，建议观望或防冷。"
+        if has_strong_intel:
+            return "YELLOW", f"模型和全球赔率主推方向相反（相差 {diff_pct}%），但我们查到了伤停/赛程理由支撑，可小看冷门或优先防平。"
+        return "YELLOW", f"⚠️ 看法打架：模型和全球赔率主推方向相反（相差 {diff_pct}%），别硬顶市场单挑独赢，稳妥优先防平或等看首发。"
+
     if max_diff <= MARKET_TRAFFIC_LIGHT["green_max_diff"]:
+        if has_lineup_rotation:
+            return "YELLOW", f"⚠️ 临场轮换降档：虽与赔率方向一致（差 {diff_pct}%），但检测到球队换了3名以上主力，小心留力或残阵翻车，优先防平！"
         return "GREEN", f"数据模型和全球主流赔率看法高度一致（相差仅 {diff_pct}%），没有明显暗雷，参考价值高。"
 
-    # v1.7 核心修复：主推方向完全一致且市场比模型更看好（豪门偏热场景），不再误杀成红灯/重扣把握分
+    # 3. 主推方向完全一致且市场比模型更看好（豪门偏热场景），不再误杀成红灯
     if market_more_bullish:
+        if has_lineup_rotation:
+            return "YELLOW", f"⚠️ 临场轮换降档：虽同向共振，但检测到临场换了3名以上主力，警惕强队留力翻车。"
         if max_diff <= 0.16:
             return "GREEN", f"模型与主流赔率方向完全一致（市场更热，相差 {diff_pct}%），稳胆方向共识强，但回报偏低可留意让球/防平。"
         return "YELLOW", f"模型与市场方向一致，但市场过热比模型高出 {diff_pct}%，警惕强队大热倒灶，稳妥可防平或看让球。"
@@ -490,12 +506,17 @@ def compute_confidence_score(pred: Dict[str, Any]) -> Dict[str, Any]:
     if s_xg >= 6.5:
         plain_reasons.append("预计净胜球优势大")
 
-    # v1.6 大白话实战策略标签（结合昨晚绿灯5/5、黄灯防平3/3规律）
+    # v1.9 大白话实战策略标签（叠加“看法相反不硬顶市场”与“临场轮换提醒”）
     rec_code = pred.get("recommended_outcome") or "H"
     side_word = "主胜" if rec_code == "H" else ("客胜" if rec_code == "A" else "平局")
     dc_word = "主队不输(胜/平)" if float(pred.get("final_prob_home") or 0) >= float(pred.get("final_prob_away") or 0) else "客队不输(平/负)"
+    t_note = str(pred.get("traffic_note") or "")
 
-    if light == "GREEN" and total >= 68:
+    if "看法" in t_note and "打架" in t_note:
+        play_advice = f"🛡️ 看法打架别硬顶：模型和全球赔率方向相反，千万别盲目单挑{side_word}，稳妥看「{dc_word}」或直接观望"
+    elif "临场轮换降档" in t_note:
+        play_advice = f"⚠️ 临场轮换提醒：检测到主力轮换3人以上，小心强队留力翻车，求稳只看「{dc_word}」"
+    elif light == "GREEN" and total >= 68:
         play_advice = f"🔥 稳胆思路：可优先看{side_word}（求稳防冷可选「{dc_word}」）"
     elif light == "GREEN":
         play_advice = f"⚖️ 势均力敌：数据靠谱但实力接近，单挑{side_word}有风险，稳妥优先看「{dc_word}」"
@@ -626,7 +647,8 @@ def predict_match(
     combined_items: List[Dict[str, Any]] = list(effective_manual or [])
     existing_cats = {x.get("category") for x in combined_items}
 
-    # v1.6 自动检测临场官宣首发是否发生大轮换（0成本对比连续两场首发名单）
+    # v1.9 自动检测临场官宣首发是否发生 3+ 主力轮换（0成本对比连续两场首发名单）
+    has_lineup_rotation = False
     if "injuries_lineup" not in existing_cats and live_summary.get("starters"):
         rot_item = detect_lineup_rotation(
             home, away, match["home_team_cn"], match["away_team_cn"], live_summary["starters"]
@@ -634,6 +656,14 @@ def predict_match(
         if rot_item:
             combined_items.append(rot_item)
             existing_cats.add("injuries_lineup")
+            has_lineup_rotation = True
+    elif live_summary.get("starters"):
+        # 即使已有手工伤停记录，也顺手检测临场轮换用于红绿灯降档提醒
+        rot_check = detect_lineup_rotation(
+            home, away, match["home_team_cn"], match["away_team_cn"], live_summary["starters"]
+        )
+        if rot_check:
+            has_lineup_rotation = True
 
     if "fixture_fatigue" not in existing_cats and (
         fatigue_info["auto_home_delta"] != 0.0 or fatigue_info["auto_away_delta"] != 0.0
@@ -690,6 +720,7 @@ def predict_match(
         abnormal_odds_shift=odds_analysis["abnormal_shift"],
         odds_dh=odds_analysis.get("dh", 0.0),
         odds_da=odds_analysis.get("da", 0.0),
+        has_lineup_rotation=has_lineup_rotation,
     )
     if cross_league_anchored:
         traffic_note = f"（已结合跨联赛赔率校准）{traffic_note}"

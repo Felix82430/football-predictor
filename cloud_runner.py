@@ -88,12 +88,13 @@ def run_daily_brief(slot_tag: str, label: str, force: bool = False) -> Dict[str,
     if not force and has_auto_pushed(push_key):
         return {"ok": True, "skipped": True, "reason": f"今日 {label} 已推送过"}
 
-    sync_res = sync_quick(days_back=1, days_ahead=2)
+    sync_res = sync_quick(days_back=1, days_ahead=3)
     now_utc = datetime.now(timezone.utc)
-    rows = list_matches_with_predictions(status="SCHEDULED", limit=50)
+    rows = list_matches_with_predictions(status="SCHEDULED", limit=60)
 
-    # 筛选未来 28 小时内开球的五大联赛/欧冠比赛
+    # 筛选未来 28 小时内开球的五大联赛/欧冠比赛；若遇休赛日无比赛，自动顺延看 54 小时预告（绝不静默失联！）
     target_rows = []
+    preview_mode = False
     for r in rows:
         try:
             kdt = datetime.fromisoformat(r["kickoff_utc"].replace("Z", "+00:00"))
@@ -104,8 +105,28 @@ def run_daily_brief(slot_tag: str, label: str, force: bool = False) -> Dict[str,
             target_rows.append(r)
 
     if not target_rows:
-        mark_auto_pushed(push_key, "DAILY_BRIEF", "未来28小时无赛程")
-        return {"ok": True, "count": 0, "sync": sync_res, "note": "未来28小时无五大联赛或欧冠赛程"}
+        preview_mode = True
+        for r in rows:
+            try:
+                kdt = datetime.fromisoformat(r["kickoff_utc"].replace("Z", "+00:00"))
+            except Exception:
+                continue
+            hours_left = (kdt - now_utc).total_seconds() / 3600.0
+            if 0.5 <= hours_left <= 54.0:
+                target_rows.append(r)
+        target_rows = target_rows[:6]
+
+    if not target_rows:
+        # 哪怕未来 54 小时真没赛程，也发一条轻提示卡片，确认机器人在线没挂掉
+        ping_card = {
+            "config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": f"⚽ {now_bjt.strftime('%m月%d日')} {label} · 休赛日在线报平安"}, "template": "grey"},
+            "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": "近 48 小时五大联赛与欧冠暂无比赛，云端机器人正常运行中，有焦点赛程会自动第一时间推送给您。\n📱 随时查看历史战绩与复盘：https://felix82430.github.io/football-predictor/"}}],
+        }
+        res = send_feishu_card(ping_card)
+        if not force and res.get("ok"):
+            mark_auto_pushed(push_key, "DAILY_BRIEF", "休赛日已发在线报平安")
+        return {"ok": res.get("ok"), "count": 0, "sync": sync_res, "feishu": res, "note": "休赛日已发在线报平安"}
 
     ENGINE_CACHE.ensure_loaded()
     bundle: List[Dict[str, Any]] = []
@@ -127,9 +148,10 @@ def run_daily_brief(slot_tag: str, label: str, force: bool = False) -> Dict[str,
         )
         bundle.append({"match": r, "prediction": pred})
 
+    title_extra = f"{now_bjt.strftime('%m月%d日')} {label}·休赛日下轮预告（{len(bundle)}场）" if preview_mode else f"{now_bjt.strftime('%m月%d日')} {label}（共{len(bundle)}场）"
     card = build_daily_brief_card(
         bundle,
-        title_suffix=f"{now_bjt.strftime('%m月%d日')} {label}（共{len(bundle)}场）",
+        title_suffix=title_extra,
     )
     res = send_feishu_card(card)
     if res.get("ok"):
@@ -224,16 +246,17 @@ def run_daily_review(force: bool = False) -> Dict[str, Any]:
 
 
 def run_auto() -> Dict[str, Any]:
-    """根据北京时间自动分发任务（放宽容错窗口，就算 GitHub 免费队列延迟 1~2 小时也绝不漏发！）"""
+    """根据北京时间自动分发任务（v1.9 大幅放宽容错窗口，就算 GitHub 免费队列延迟 2~3 小时也绝不漏发！）"""
     now_bjt = datetime.now(BJT)
     h = now_bjt.hour
     results: Dict[str, Any] = {"bjt_time": now_bjt.strftime("%Y-%m-%d %H:%M")}
 
-    if 8 <= h <= 11:
+    # 复盘窗口放宽至 07:00~15:59，晚间简报放宽至 18:00~23:59（靠 auto_push_logs 严格去重，每档只发 1 次）
+    if 7 <= h <= 15:
         results["daily_review"] = run_daily_review()
-    if 11 <= h <= 14:
+    if 11 <= h <= 15:
         results["daily_noon"] = run_daily_brief("1200", "12:00 午间初判简报")
-    if 19 <= h <= 22:
+    if 18 <= h <= 23:
         results["daily_evening"] = run_daily_brief("2000", "20:00 晚间盘口更新简报")
 
     # 任何唤醒时段都顺带检查一次赛前约 1 小时窗口，并确保未来 48 小时赛程在手机网页上均已出预测
